@@ -19,8 +19,8 @@ a simple scripting language to support "object" pipelines
 
 Variables are not declared, but just initialized. One a variables type is set by initialization, it cannot be changed.
 
-    x := 1          // x is an integer
-    s := "boo"      // s is a string
+    x := 1          # x is an integer
+    s := "boo"      # s is a string
 
 Multiple assignment is supported:
 
@@ -28,11 +28,11 @@ Multiple assignment is supported:
 
 ## simple types
 
-0. Bool (`true` or `false`)
-1. Integer (`int64`)
-2. String
-3. Character (go `rune`)
-4. Float (`float64`)
+1. Bool (`true` or `false`)
+2. Integer (`int64`)
+3. String
+4. Character (go `rune`)
+5. Float (`float64`)
 
 Variables of other go types are created by explicit conversion, eg.
 
@@ -43,8 +43,8 @@ Variables of other go types are created by explicit conversion, eg.
 The type of an variable can be determined with the `type` function.
 
     x := 2
-    type(x)     // int64
-    type("foo") // string
+    type(x)     # int64
+    type("foo") # string
 
 ## nil
 
@@ -85,7 +85,7 @@ variable, it must have the same number of parameters.
         return a+b+c
     }
 
-    // error:
+    # error:
     f := func(a,b) {
         return a+b
     }
@@ -95,6 +95,27 @@ empty `func` definition:
 
     f := foo(a,b,c) {}
 
+## named parameters
+
+Named parameters in funcion invocation is supported.
+
+    f := func(a,b,c) {
+        # ...
+    }
+
+    f(b: 2, c: 1, a: 23)
+
+Omitted parameters can be set with the default assignment operator.
+
+    f := func(a,b,c) {
+        a ?= "apple"    # a is assigned "apple" iff a == nil
+        # ...
+    }
+
+    f(b: 2, c: 7)
+
+It is an error to omit a parameter in a function invocation that does not have a
+default value assignment.
 
 ## structs
 
@@ -149,25 +170,24 @@ Struct fields can be accessed by offset.
         c := 42
     }
 
-    x[0]    // "apple"
-    x[2]    // 42
+    x[0]    # "apple"
+    x[2]    # 42
 
 Struct fields can be access by field name.
 
-    x["a"]  // "apple"
+    x["a"]  # "apple"
 
 Standard struct methods (cannot be redefined)
 
-    dup()       // create and return a copy of the struct
-    flds()      // return a list of field names (names not bound to funcs)
-    methods()   // return a list of methods (names bound to funcs)
+    dup()       # create and return a copy of the struct
+    flds()      # return a list of field names (names not bound to funcs)
+    methods()   # return a list of methods (names bound to funcs)
 
 Type expressions of structs:
 
-    type(struct{})  // struct
-    type(fooBar())  // fooBar
-    type(fooBar)    // type (fooBar is a type, not a thing)
-
+    type(struct{})  # struct
+    type(fooBar())  # fooBar
+    type(fooBar)    # type (fooBar is a type, not a thing)
 
 ## self-referential structs
 
@@ -175,7 +195,7 @@ Sometimes it's handy to create recursive `struct`s. A typed `nil` can be used to
 initialize such a reference.
 
     struct binaryTree {
-        value := ""     // gonna sort strings
+        value := ""     # gonna sort strings
         left := nil(binaryTree)
         right := nil(binaryTree)
     }
@@ -186,37 +206,37 @@ Booleans are of type `bool`. Values are `true` and `false` and `nil`. In most
 logical expressions, `nil` is equivalent to `false`. The exception is `==`,
 where `false` and `nil` are not equal.
 
-    true && false       // false
-    true || false       // true
-    !true               // false
-    !false              // true
-    true && nil         // false
-    true || nil         // true
-    !nil                // true
-    true == false       // false
-    false == false      // true
-    true == nil         // false
-    false == nil        // false
-    nil == nil          // true
+    true && false       # false
+    true || false       # true
+    !true               # false
+    !false              # true
+    true && nil         # false
+    true || nil         # true
+    !nil                # true
+    true == false       # false
+    false == false      # true
+    true == nil         # false
+    false == nil        # false
+    nil == nil          # true
 
 The function `bool` can be used to convert some types to an actual `bool`. For
 numbers, 0 (zero) is false, anything else is true. For strings, if the value is
 "true" or "t", then it's `true`; for "" (empty string), it's `nil`; otherwise
 it's `false`.
 
-    bool(1)             // true
-    bool(0)             // false
-    bool("true")        // true
-    bool("false")       // false
-    bool("yes")         // false
-    bool("")            // nil
+    bool(1)             # true
+    bool(0)             # false
+    bool("true")        # true
+    bool("false")       # false
+    bool("yes")         # false
+    bool("")            # nil
 
 Boolean operators
 
-    !       // not
-    &&      // and
-    ||      // or
-    ^^      // xor
+    !       # not
+    &&      # and
+    ||      # or
+    ^^      # xor
 
 ## math
 
@@ -258,15 +278,15 @@ These are only postfix. The value of the expression is the value after the
 operation.
 
     x := 0
-    y := x++    // y has the value 1
+    y := x++    # y has the value 1
 
 ## lists
 
 Lists can contain any/mixed types.
 
-    l := []                     // empty list
-    l := [1,2,3]                // list of ints
-    l := [1,"foo",myStruct()]   // mixed list
+    l := []                     # empty list
+    l := [1,2,3]                # list of ints
+    l := [1,"foo",myStruct()]   # mixed list
 
 `append` is a method, and updates the list.
 
@@ -275,24 +295,23 @@ Lists can contain any/mixed types.
 Values in lists are retrieved with 0-based offset:
 
     l := [1,"foo",true]
-    l[0]        // 1
-    l[1]        // "foo"
-    l[5]        // error!
+    l[0]        # 1
+    l[1]        # "foo"
+    l[5]        # error!
 
 Sub-lists:
 
     l := [1,2,3,4]
-    l[1:3]      // [2,3,4]
-    l[3:]       // [4]
-    l[:1]       // [1,2]
+    l[1:3]      # [2,3,4]
+    l[3:]       # [4]
+    l[:1]       # [1,2]
 
 Standard list methods:
 
-    append(x)       // add x to the end
-    len()           // return the current size of the list
-    pop()           // return the last item appended, remove from the list
-    dup()           // create and return a copy of the list
-
+    append(x)       # add x to the end
+    len()           # return the current size of the list
+    pop()           # return the last item appended, remove from the list
+    dup()           # create and return a copy of the list
 
 ## maps
 
@@ -307,14 +326,14 @@ Maps are also accessible by order assigned (0-based).
     data["age"] := 42
     data["name"] := "fred"
 
-    data["age"]     // 42
-    data[1]         // "san fran"
-    data[0]         // "fred"
+    data["age"]     # 42
+    data[1]         # "san fran"
+    data[0]         # "fred"
 
 Maps can be accessed with dot notation. (This only works for keys having only
 identifier-safe characters.)
 
-    data.city       // "san fran"
+    data.city       # "san fran"
 
 To use a struct as a key, the method `hash` (with 0 extra parameters) must be
 defined, and it must return a string.
@@ -328,11 +347,11 @@ defined, and it must return a string.
 
 Standard map methods:
 
-    del(key)        // remove key from the map
-    len()           // return the number of keys in the map
-    dup()           // create and return a copy of the map
-    keys()          // return an in-order list of the keys
-    values()        // return an in-order list of the values
+    del(key)        # remove key from the map
+    len()           # return the number of keys in the map
+    dup()           # create and return a copy of the map
+    keys()          # return an in-order list of the keys
+    values()        # return an in-order list of the values
 
 ## if
 
@@ -352,6 +371,11 @@ or
         ...
     }
 
+Note that since everything is an expression, it's acceptable to write something
+like this:
+
+    x := if a == b { 1 } else { 2 }
+
 ## while
 
     while ... {
@@ -368,7 +392,7 @@ the value is `false`.
     v := while true {
         break
     }
-    // v is false
+    # v is false
 
 ## for
 
@@ -381,19 +405,19 @@ Coroutine/sequence iteration:
 Integers can be used to iterate:
 
     for v in 3 {
-        // v has values 0, 1, 2
+        # v has values 0, 1, 2
     }
 
 Strings:
 
     for v in "hello" {
-        // v has character values 'h','e','l','l','o'
+        # v has character values 'h','e','l','l','o'
     }
 
 Lists
 
     for v in [1,2,3] {
-        // v has values 1, 2, 3
+        # v has values 1, 2, 3
     }
 
 In `for` loops, the variable is initialized on each iteration, so it's possible
@@ -411,8 +435,8 @@ to process lists of mixed types:
 A `for` loop may also include an index variable
 
     for i, v in ['a','b','c'] {
-        // i has values 0, 1, 2
-        // v has values 'a', 'b', 'c'
+        # i has values 0, 1, 2
+        # v has values 'a', 'b', 'c'
     }
 
 When using an iterator/coroutine which returns n values, the for loop must have
@@ -430,7 +454,7 @@ Multibranch logic:
         case x isa string {
             ...
         }
-        // default case
+        # default case
         ...
     }
 
@@ -447,7 +471,7 @@ of any type. The keyword `isa` is used for type checking.
         if x isa string {
             return x + " two"
         }
-        // implicit nil return
+        # implicit nil return
     }
 
 There is no type hierarchy, but lists of types can be used to check multiple
@@ -457,7 +481,21 @@ types. There are some predefined type lists.
 
 It is an error to use `isa` against a non-type expression.
 
-    x isa "string" // error. "string" is not string.
+    x isa "string" # error. "string" is not string.
+
+A less specific method of type checking is with `hasa` which checks if the
+object has a field or method.
+
+    x := struct {
+        foo := func() {}
+        biff := 1
+    }
+
+    x hasa foo                              # true
+    x hasa bar                              # false
+    x hasa foo && x.foo isa func            # true
+    x hasa foo && x.foo isa int             # false
+    x hasa biff && x.biff isa std.Number    # true
 
 ## enum
 
@@ -472,8 +510,8 @@ initialized with an enum value may only take other values of the same enum.
 
 If an enum value is ambiguous it can be specified with the particular type.
 
-    x := blue           // error. ambiguous
-    x := Color.blue     // ok
+    x := blue           # error. ambiguous
+    x := Color.blue     # ok
 
 The standard function `string()` will return the string representation of the
 enum value.
@@ -518,7 +556,7 @@ if present.
 
     pkg mystuff
 
-    // ... any kinds of definitions/code
+    # ... any kinds of definitions/code
 
     foo := func() {
         printf("yahoo")
@@ -545,16 +583,16 @@ produce a series of values.
     for x in g() {
         print(x)
     }
-    // prints a, b, c
+    # prints a, b, c
 
 A function may not use both `yield` and `return`.
 
 If the value of a generator is assigned to a variable, it is effectively a
 function that will produce a series of values as it is invoked.
 
-    f := g()    // the value of f is now a new function
-    print(f())  // print "a"
-    print(f())  // print "b"
+    f := g()    # the value of f is now a new function
+    print(f())  # print "a"
+    print(f())  # print "b"
 
 
 ## filters
