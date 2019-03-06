@@ -635,3 +635,7 @@ expansion (e.g. `*.foo`) used the `$$`.
 
 The value of an external command invocation like this is an input stream. That
 is then used as the last parameter to the next item in the pipeline.
+
+## credit
+
+built with _Writing An Interpreter In Go_ by Thorsten Ball.
