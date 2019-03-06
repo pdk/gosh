@@ -69,12 +69,18 @@ Functions will return the value of the last expression evaluated, if there is no
 
 Functions can return multiple values.
 
+    f := func() {
+        return "alpha", 42
+    }
+    a, b := f()
+
 Function/method invocation:
 
     foo(1,2,3)
     x.foo(1,2,3)
 
-Methods may only be defined on structs, at struct declaration. Some internal types have methods.
+Methods may only be defined on structs, at struct declaration. Some internal
+types have methods.
 
 Functions are not tightly bound to their names. A function variable is just
 another variable. It can be reassigned. But it can only be reassigned to a new
@@ -238,6 +244,34 @@ Boolean operators
     ||      # or
     ^^      # xor
 
+### Logical AND &&
+
+    expr1 && expr2
+
+If the value of `expr1` is a `bool` and it is `true`, then `expr2` will be evaluated, and its value will be the value of the whole expression. If `expr1` is not a `bool`, or its value is not `true`, then the value of the expression is the value of `expr1` (usually `false`).
+
+    true && 42      # 42
+    false && 42     # false
+    42 && true      # 42
+    true && false   # false
+
+### Logical OR ||
+
+    expr1 || expr2
+
+If `expr1` is a `bool` and its value is `true`, then the value of the whole expression is `true`, and `expr2` will not be evaluated. If `expr1` is not a `bool` or its value is not `true`, then `expr2` will be evaluated and its value will be the value of the entire expression.
+
+### &&/|| expressions
+
+    x := a == 1 && "one" || "something else"
+
+If a is 1, then x will get "one", otherwise "something else".
+
+### quick returns
+
+    err == nil && return "meh", err
+    err != nil || return "meg", err
+
 ## math
 
 Standard numerical operators:
@@ -261,24 +295,26 @@ that are `==`.
 
 ## assignment
 
-There is only 1 assignment operator.
+The standard assignment operator is `:=`.
 
     x := 1
 
+An assignment is an expression, so this is valid:
+
     x := y := z := 1
 
-Since the value of an assignment expression is the value, assignment can be chained.
+There is also the accumulator operator:
 
-There are also increment/decrement operators:
+    x += 1
+    y += -1
+    s += " moar"
 
-    x++
-    x--
+And the nil-assignment:
 
-These are only postfix. The value of the expression is the value after the
-operation.
+    v ?= 42
 
-    x := 0
-    y := x++    # y has the value 1
+This is a conditional assignment. Only if the current value of the variable is
+`nil` will the value be assigned.
 
 ## lists
 
@@ -571,13 +607,12 @@ will only be evaluated once.
 
 ## generators
 
-Generators are a special case of functions that use the `yield` keyword to
-produce a series of values.
+Generators are a special case of functions that produce a series of values.
 
     g := func() {
-        yield "a"
-        yield "b"
-        yield "c"
+        << "a"
+        << "b"
+        << "c"
     }
 
     for x in g() {
@@ -585,15 +620,69 @@ produce a series of values.
     }
     # prints a, b, c
 
-A function may not use both `yield` and `return`.
+A generater may use `return` to terminate, but it cannot return any values.
 
-If the value of a generator is assigned to a variable, it is effectively a
-function that will produce a series of values as it is invoked.
+Generators with more than one series can be defined.
 
-    f := g()    # the value of f is now a new function
-    print(f())  # print "a"
-    print(f())  # print "b"
+    g := func() [i, j] {
+        i << "a"
+        j << 1
+        i << "b"
+        j << 2
+    }
 
+## consumers
+
+A consumer is a function which iterates on an consumer.
+
+    f := func(dataStream) {
+        for item in dataStream {
+            # do stuff
+        }
+    }
+
+To process multiple input streams:
+
+    f := func(s1, s2) {
+        for item in s1, s2 {
+            # item is from either s1 or s2
+        }
+    }
+
+## pipelines
+
+A pipeline is a series of generators and consumers where the products of
+generators are inputs to consumers.
+
+    numbers := func() {
+        for i in 10 {
+            << i
+        }
+    }
+
+    printer := func(input) {
+        for n in input {
+            printf("%d\n", n)
+        }
+    }
+
+    numbers() >> printer(~)
+
+If a generator produces more than a single stream (see `g()` above), then the
+pipeline can specify where to feed each output stream.
+
+    g() i >> [ addOne() >> printer() ], j >> devNull()
+
+Multiple series can be merged with `^`.
+
+    [ genAlpha() ^ genBeta() ] >> printer()
+
+## multiple workers
+
+How to specify that a consumer can be replicated? Use `#` as a multiple
+operator?
+
+    readLines(stdin) >> 5 # lineProcessor() >> printer()
 
 ## filters
 
