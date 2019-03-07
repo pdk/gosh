@@ -9,3 +9,6 @@ examples on github:
 * https://github.com/cristiandima/tdop
 * https://github.com/richardjennings/prattparser
 
+c lang precedence:
+
+* http://web.cse.ohio-state.edu/~babic.1/COperatorPrecedenceTable.pdf
