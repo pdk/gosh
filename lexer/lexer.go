@@ -75,8 +75,18 @@ func lex(line string, lineNo int) []Token {
 		i += c
 	}
 
-	if len(toks) == 0 || (len(toks) == 1 && toks[0].token == token.COMMENT) {
+	if len(toks) == 0 {
 		return toks
+	}
+
+	comment := []Token{}
+	if toks[len(toks)-1].token == token.COMMENT {
+		comment = append(comment, toks[len(toks)-1])
+		toks = toks[0 : len(toks)-1]
+	}
+
+	if len(toks) == 0 {
+		return append(toks, comment...)
 	}
 
 	lastTok := toks[len(toks)-1].token
@@ -84,7 +94,7 @@ func lex(line string, lineNo int) []Token {
 		toks = append(toks, newToken(token.SEMI, ";").at(lineNo, i+1))
 	}
 
-	return toks
+	return append(toks, comment...)
 }
 
 func doAddSemiAfter(lastTok token.Token) bool {
@@ -101,7 +111,9 @@ func doAddSemiAfter(lastTok token.Token) bool {
 		lastTok == token.RETURN ||
 		lastTok == token.RPAREN ||
 		lastTok == token.RSQR ||
-		lastTok == token.RBRACE {
+		lastTok == token.RBRACE ||
+		lastTok == token.DOLLAR ||
+		lastTok == token.DDOLLAR {
 
 		return true
 	}
@@ -175,12 +187,6 @@ func nextToken(chars []rune) (Token, int) {
 		}
 		return newToken(token.GRTR, ">"), i + 1
 
-	case '$':
-		if peek == '$' {
-			return newToken(token.DDOLLAR, "$"), i + 2
-		}
-		return newToken(token.DOLLAR, "$$"), i + 1
-
 	case '<':
 		if peek == '<' {
 			return newToken(token.LPIPE, "<<"), i + 2
@@ -234,6 +240,14 @@ func nextToken(chars []rune) (Token, int) {
 		return newToken(token.DIV, "/"), i + 1
 	case '%':
 		return newToken(token.MODULO, "%"), i + 1
+
+	case '$':
+		tok := token.DOLLAR
+		if peek == '$' {
+			tok = token.DDOLLAR
+		}
+		command, l := scanCommand(chars)
+		return newToken(tok, string(command)), i + l
 	}
 
 	if unicode.IsDigit(ch) {
@@ -276,6 +290,54 @@ func scanString(chars []rune) []rune {
 	}
 
 	return r
+}
+
+func scanCommand(chars []rune) ([]rune, int) {
+	var r []rune
+	c := 0
+	if chars[0] == '$' {
+		c++
+		chars = chars[1:]
+	}
+	if len(chars) == 0 {
+		return r, c
+	}
+	if chars[0] == '$' {
+		c++
+		chars = chars[1:]
+	}
+	if len(chars) == 0 {
+		return r, c
+	}
+
+	n := countWhitespace(chars)
+	chars = chars[n:]
+	c += n
+	if len(chars) == 0 {
+		return r, c
+	}
+
+	if unicode.IsLetter(chars[0]) || chars[0] == '_' {
+		ident := scanIdent(chars)
+		return ident, c + len(ident)
+	}
+
+	if chars[0] != '{' {
+		return r, c
+	}
+
+	chars = chars[1:]
+	c++
+
+	for _, ch := range chars {
+		if ch == '}' {
+			return r, c + 1
+		}
+		r = append(r, ch)
+		c++
+	}
+
+	return r, c
 }
 
 func scanNumeric(chars []rune) ([]rune, bool) {
