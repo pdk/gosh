@@ -1,0 +1,28 @@
+#!/usr/bin/env gosh
+
+&&!=:=()...
+
+# thsi is a commenT
+
+^ := { # another comment
+
+)
+]
+}
+
+${ ls -l }
+$${ echo * }
+
+if alpha == 23 {
+    x := 8383.8
+    y := -23
+    x := +33
+    print("hello, world\n")
+    return blop(a,b,c)
+}
+
+break
+return
+else
+func
+switch

@@ -1,191 +1,329 @@
 package lexer
 
 import (
+	"fmt"
+	"strconv"
+	"unicode"
+	"unicode/utf8"
+
 	"github.com/pdk/gosh/token"
 )
 
 // Lexer reads an input string identifying tokens.
 type Lexer struct {
-	input        string
-	position     int  // current position in input (points to current char)
-	readPosition int  // current reading position in input (after current char)
-	ch           byte // current char under examination
+	input  []string
+	tokens []Token
 }
 
-// New returns a new Lexer.
-func New(input string) *Lexer {
-	l := &Lexer{input: input}
-	return l
+// Toks returns the tokenized result
+func (lex *Lexer) Toks() []Token {
+	return lex.tokens
 }
 
-// checkTwoByteToken checks if this we're at a 2-byte token, or if it's just a
-// lone single-byte.
-func (l *Lexer) checkTwoByteToken(nextByte byte, typeIfMatch token.TokenType, typeIfNotMatch token.TokenType) token.Token {
-
-	if l.peekChar() != nextByte {
-		return newToken(typeIfNotMatch, l.ch)
-	}
-
-	// match! it's the double-char token
-	ch := l.ch
-	l.readChar()
-	lit := string(ch) + string(l.ch)
-	return token.Token{Type: typeIfMatch, Literal: lit}
+// Token contains a lex'd token and the literal value.
+type Token struct {
+	token      token.Token
+	literal    string
+	lineNumber int
+	charNumber int
 }
 
-// NextToken returns the next token from the input stream.
-func (l *Lexer) NextToken() token.Token {
+func (tok Token) at(lineNo, charNo int) Token {
 
-	var tok token.Token
+	tok.lineNumber = lineNo
+	tok.charNumber = charNo
 
-	l.skipWhitespace()
-
-	switch l.ch {
-	case '=':
-		switch l.peekChar() {
-		case '=':
-			l.readChar()
-			tok = newToken2(token.EQ, "==")
-		default:
-			tok = newToken(token.ILLEGAL, "=")
-		}
-	case '!':
-		tok = l.checkTwoByteToken('=', token.NOT_EQ, token.BANG)
-	case ':':
-		tok = l.checkTwoByteToken('=', token.ASSIGN, token.COLON)
-	case '+':
-		tok = newToken(token.PLUS, l.ch)
-	case '-':
-		tok = newToken(token.MINUS, l.ch)
-	case '/':
-		tok = newToken(token.SLASH, l.ch)
-	case '*':
-		tok = newToken(token.ASTERISK, l.ch)
-	case '<':
-		tok = l.checkTwoByteToken('=', token.LT_EQ, token.LT)
-	case '>':
-		switch l.peekChar() {
-		case '=':
-			l.readChar()
-			tok = newToken2(token.GT_EQ, ">=")
-		case '>':
-			l.readChar()
-			tok = newToken2(token.PIPE, ">>")
-		default:
-			tok = newToken(token.GT, '>')
-		}
-	case ';':
-		tok = newToken(token.SEMICOLON, l.ch)
-	case ',':
-		tok = newToken(token.COMMA, l.ch)
-	case '{':
-		tok = newToken(token.LBRACE, l.ch)
-	case '}':
-		tok = newToken(token.RBRACE, l.ch)
-	case '(':
-		tok = newToken(token.LPAREN, l.ch)
-	case ')':
-		tok = newToken(token.RPAREN, l.ch)
-	case ']':
-		tok = newToken(token.RSQR, l.ch)
-	case '[':
-		tok = newToken(token.LSQR, l.ch)
-	case 0:
-		tok.Literal = ""
-		tok.Type = token.EOF
-	default:
-		if isLetter(l.ch) {
-			tok.Literal = l.readIdentifier()
-			tok.Type = token.LookupIdent(tok.Literal)
-			return tok
-		} else if isDigit(l.ch) {
-			tok.Type = token.INT
-			tok.Literal = l.readNumber()
-			return tok
-		} else {
-			tok = newToken(token.ILLEGAL, l.ch)
-		}
-	}
-
-	l.readChar()
 	return tok
 }
 
-func (l *Lexer) skipWhitespace() {
+func (tok Token) String() string {
+	lit := tok.literal
+	if tok.token == token.STRING {
+		lit = strconv.Quote(tok.literal)
+	}
+	return fmt.Sprintf("%3d, %3d %-10s %s", tok.lineNumber, tok.charNumber, tok.token.String(), lit)
+}
 
-	for {
-		// # is comment marker
-		if l.ch == '#' {
-			l.skipToEndOfLine()
+// New returns a new Lexer.
+func New(input []string) *Lexer {
+
+	l := &Lexer{input: input}
+
+	for lineOffset, line := range input {
+		l.tokens = append(l.tokens, lex(line, lineOffset+1)...)
+	}
+
+	eof := newToken(token.EOF, "").at(len(input)+1, 0)
+	l.tokens = append(l.tokens, eof)
+
+	return l
+}
+
+func lex(line string, lineNo int) []Token {
+
+	var toks []Token
+
+	chars := stringRunes(line)
+	l := len(chars)
+
+	i := 0
+	for i < l {
+		nt, c := nextToken(chars[i:])
+		if nt.token != token.NADA {
+			toks = append(toks, nt.at(lineNo, i+1))
 		}
+		i += c
+	}
 
-		if l.ch == ' ' || l.ch == '\t' || l.ch == '\n' || l.ch == '\r' {
-			l.readChar()
-			continue
+	if len(toks) == 0 || (len(toks) == 1 && toks[0].token == token.COMMENT) {
+		return toks
+	}
+
+	lastTok := toks[len(toks)-1].token
+	if doAddSemiAfter(lastTok) {
+		toks = append(toks, newToken(token.SEMI, ";").at(lineNo, i+1))
+	}
+
+	return toks
+}
+
+func doAddSemiAfter(lastTok token.Token) bool {
+
+	// https://medium.com/golangspec/automatic-semicolon-insertion-in-go-1990338f2649
+
+	if lastTok == token.IDENT ||
+		lastTok == token.INT ||
+		lastTok == token.FLOAT ||
+		lastTok == token.CHAR ||
+		lastTok == token.STRING ||
+		lastTok == token.BREAK ||
+		lastTok == token.CONTINUE ||
+		lastTok == token.RETURN ||
+		lastTok == token.RPAREN ||
+		lastTok == token.RSQR ||
+		lastTok == token.RBRACE {
+
+		return true
+	}
+
+	return false
+}
+
+func stringRunes(line string) []rune {
+
+	len := utf8.RuneCount([]byte(line))
+	chars := make([]rune, len, len)
+
+	i := 0
+	for _, ch := range line {
+		chars[i] = ch
+		i++
+	}
+
+	return chars
+}
+
+func nextToken(chars []rune) (Token, int) {
+
+	i := countWhitespace(chars)
+	chars = chars[i:]
+
+	if len(chars) == 0 {
+		return newToken(token.NADA, ""), i
+	}
+
+	ch := chars[0]
+
+	if ch == '#' {
+		return Token{
+			token:   token.COMMENT,
+			literal: string(chars),
+		}, i + len(chars)
+	}
+
+	peek := ' '
+	if len(chars) > 1 {
+		peek = chars[1]
+	}
+
+	switch ch {
+
+	case ':':
+		if peek == '=' {
+			return newToken(token.ASSIGN, ":="), i + 2
 		}
+		return newToken(token.COLON, ":"), i + 1
 
-		break
+	case '!':
+		if peek == '=' {
+			return newToken(token.NOT_EQUAL, "!="), i + 2
+		}
+		return newToken(token.NOT, "!"), i + 1
+
+	case '+':
+		if peek == '=' {
+			return newToken(token.ACCUM, "+="), i + 2
+		}
+		return newToken(token.PLUS, "+"), i + 1
+
+	case '>':
+		if peek == '>' {
+			return newToken(token.RPIPE, ">>"), i + 2
+		}
+		if peek == '=' {
+			return newToken(token.GRTR_EQUAL, ">="), i + 2
+		}
+		return newToken(token.GRTR, ">"), i + 1
+
+	case '$':
+		if peek == '$' {
+			return newToken(token.DDOLLAR, "$"), i + 2
+		}
+		return newToken(token.DOLLAR, "$$"), i + 1
+
+	case '<':
+		if peek == '<' {
+			return newToken(token.LPIPE, "<<"), i + 2
+		}
+		if peek == '=' {
+			return newToken(token.LESS_EQUAL, "<="), i + 2
+		}
+		return newToken(token.LESS, "<"), i + 1
+
+	case '&':
+		if peek == '&' {
+			return newToken(token.LOG_AND, "&&"), i + 2
+		}
+		return newToken(token.ILLEGAL, "&"), i + 1
+
+	case '=':
+		if peek == '=' {
+			return newToken(token.EQUAL, "=="), i + 2
+		}
+		return newToken(token.ILLEGAL, "="), i + 1
+
+	case '|':
+		if peek == '|' {
+			return newToken(token.LOG_OR, "||"), i + 2
+		}
+		return newToken(token.ILLEGAL, "|"), i + 1
+
+	case '-':
+		return newToken(token.MINUS, "-"), i + 1
+	case ',':
+		return newToken(token.COMMA, ","), i + 1
+	case ';':
+		return newToken(token.SEMI, ";"), i + 1
+	case '.':
+		return newToken(token.PERIOD, "."), i + 1
+	case '(':
+		return newToken(token.LPAREN, "("), i + 1
+	case ')':
+		return newToken(token.RPAREN, ")"), i + 1
+	case '[':
+		return newToken(token.LSQR, "["), i + 1
+	case ']':
+		return newToken(token.RSQR, "]"), i + 1
+	case '{':
+		return newToken(token.LBRACE, "{"), i + 1
+	case '}':
+		return newToken(token.RBRACE, "}"), i + 1
+	case '*':
+		return newToken(token.MULT, "*"), i + 1
+	case '/':
+		return newToken(token.DIV, "/"), i + 1
+	case '%':
+		return newToken(token.MODULO, "%"), i + 1
 	}
-}
 
-func (l *Lexer) skipToEndOfLine() {
-	for l.ch != '\n' || l.ch != '\r' {
-		l.readChar()
+	if unicode.IsDigit(ch) {
+		number, isFloat := scanNumeric(chars)
+		if isFloat {
+			return newToken(token.FLOAT, string(number)), i + len(number)
+		}
+		return newToken(token.INT, string(number)), i + len(number)
 	}
-}
 
-func (l *Lexer) readChar() {
-	if l.readPosition >= len(l.input) {
-		l.ch = 0
-	} else {
-		l.ch = l.input[l.readPosition]
+	if unicode.IsLetter(ch) || ch == '_' {
+		ident := string(scanIdent(chars))
+		which := token.CheckIdent(ident)
+		return newToken(which, ident), i + len(ident)
 	}
-	l.position = l.readPosition
-	l.readPosition += 1
-}
 
-func (l *Lexer) peekChar() byte {
-	if l.readPosition >= len(l.input) {
-		return 0
-	} else {
-		return l.input[l.readPosition]
+	if ch == '"' {
+		str0 := string(scanString(chars))
+		str, err := strconv.Unquote(str0)
+		if err != nil {
+			return newToken(token.ILLEGAL, str0), i + len(str0)
+		}
+		return newToken(token.STRING, str), i + len(str0)
 	}
+
+	return newToken(token.ILLEGAL, string(ch)), i + 1
 }
 
-func (l *Lexer) readIdentifier() string {
-	position := l.position
-	for isLetter(l.ch) {
-		l.readChar()
+func scanString(chars []rune) []rune {
+	var r []rune
+
+	lastC := '\\'
+	for _, c := range chars {
+		if lastC != '\\' && c == '"' {
+			r = append(r, c)
+			return r
+		}
+		r = append(r, c)
+		lastC = c
 	}
-	return l.input[position:l.position]
+
+	return r
 }
 
-func (l *Lexer) readNumber() string {
-	position := l.position
-	for isDigit(l.ch) {
-		l.readChar()
+func scanNumeric(chars []rune) ([]rune, bool) {
+	var r []rune
+	gotDot := false
+	for _, c := range chars {
+		if c == '.' {
+			if gotDot {
+				return r, true
+			}
+			gotDot = true
+		}
+		if unicode.IsDigit(c) || c == '.' {
+			r = append(r, c)
+		} else {
+			return r, gotDot
+		}
 	}
-	return l.input[position:l.position]
+
+	return r, gotDot
 }
 
-func isLetter(ch byte) bool {
-	return 'a' <= ch && ch <= 'z' || 'A' <= ch && ch <= 'Z' || ch == '_'
-}
-
-func isDigit(ch byte) bool {
-	return '0' <= ch && ch <= '9'
-}
-
-func newToken(tokenType token.TokenType, ch byte) token.Token {
-	return token.Token{
-		Type:    tokenType,
-		Literal: string(ch),
+func scanIdent(chars []rune) []rune {
+	var r []rune
+	for _, c := range chars {
+		if unicode.IsLetter(c) || c == '_' {
+			r = append(r, c)
+		} else {
+			return r
+		}
 	}
+
+	return r
 }
 
-func newToken2(tokenType token.TokenType, lit string) token.Token {
-	return token.Token{
-		Type:    tokenType,
-		Literal: lit,
+func countWhitespace(chars []rune) int {
+
+	i := 0
+	for unicode.IsSpace(chars[i]) {
+		i++
+	}
+
+	return i
+}
+
+func newToken(tok token.Token, lit string) Token {
+	return Token{
+		token:   tok,
+		literal: lit,
 	}
 }

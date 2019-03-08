@@ -5,6 +5,7 @@ import (
 	"log"
 	"os"
 
+	"github.com/pdk/gosh/lexer"
 	"github.com/pdk/gosh/reader"
 )
 
@@ -25,6 +26,11 @@ func main() {
 	}
 
 	for i, l := range result {
-		fmt.Printf("%3d. %s\n", i, l)
+		fmt.Printf("%3d. %s\n", i+1, l)
+	}
+
+	lexed := lexer.New(result).Toks()
+	for _, t := range lexed {
+		fmt.Printf("%s\n", t.String())
 	}
 }
