@@ -11,92 +11,111 @@ import (
 
 // Lexer reads an input string identifying tokens.
 type Lexer struct {
-	input  []string
-	tokens []Token
+	input []string // input is a slice of strings. each string is a line from the input.
+	lexed []Lexeme // the result of lexing an input file is a slice of Lexemes.
 }
 
-// Toks returns the tokenized result
-func (lex *Lexer) Toks() []Token {
-	return lex.tokens
+// Lexemes returns the tokenized result
+func (lex *Lexer) Lexemes() []Lexeme {
+	return lex.lexed
 }
 
-// Token contains a lex'd token and the literal value.
-type Token struct {
+// Lexeme contains a lex'd token and the literal value.
+type Lexeme struct {
 	token      token.Token
 	literal    string
 	lineNumber int
 	charNumber int
 }
 
-func (tok Token) at(lineNo, charNo int) Token {
-
-	tok.lineNumber = lineNo
-	tok.charNumber = charNo
-
-	return tok
-}
-
-func (tok Token) String() string {
-	lit := tok.literal
-	if tok.token == token.STRING {
-		lit = strconv.Quote(tok.literal)
+// newLexeme makes a new Lexeme, with literal.
+func newLexeme(tok token.Token, lit string) Lexeme {
+	return Lexeme{
+		token:   tok,
+		literal: lit,
 	}
-	return fmt.Sprintf("%3d, %3d %-10s %s", tok.lineNumber, tok.charNumber, tok.token.String(), lit)
 }
 
-// New returns a new Lexer.
+// at sets a Lexeme's location
+func (lex Lexeme) at(lineNo, charNo int) Lexeme {
+
+	lex.lineNumber = lineNo
+	lex.charNumber = charNo
+
+	return lex
+}
+
+// String returns a string representation of a Lexeme for user-friendly viewing.
+func (lex Lexeme) String() string {
+	lit := lex.literal
+	if lex.token == token.STRING {
+		lit = strconv.Quote(lex.literal)
+	}
+	return fmt.Sprintf("%3d, %3d %-10s %s", lex.lineNumber, lex.charNumber, lex.token.String(), lit)
+}
+
+// New returns a new Lexer. Actually does all the work of lexing the input.
 func New(input []string) *Lexer {
 
-	l := &Lexer{input: input}
-
-	for lineOffset, line := range input {
-		l.tokens = append(l.tokens, lex(line, lineOffset+1)...)
+	l := &Lexer{
+		input: input,
 	}
 
-	eof := newToken(token.EOF, "").at(len(input)+1, 0)
-	l.tokens = append(l.tokens, eof)
+	for lineOffset, line := range input {
+		l.lexed = append(l.lexed, lex(line, lineOffset+1)...)
+	}
+
+	eof := newLexeme(token.EOF, "").at(len(input)+1, 0)
+	l.lexed = append(l.lexed, eof)
 
 	return l
 }
 
-func lex(line string, lineNo int) []Token {
+func lex(line string, lineNo int) []Lexeme {
 
-	var toks []Token
+	var xems []Lexeme
 
 	chars := stringRunes(line)
 	l := len(chars)
 
 	i := 0
 	for i < l {
-		nt, c := nextToken(chars[i:])
+		nt, c := nextLexeme(chars[i:])
 		if nt.token != token.NADA {
-			toks = append(toks, nt.at(lineNo, i+1))
+			xems = append(xems, nt.at(lineNo, i+1))
 		}
 		i += c
 	}
 
-	if len(toks) == 0 {
-		return toks
+	if len(xems) == 0 {
+		return xems
 	}
 
-	comment := []Token{}
-	if toks[len(toks)-1].token == token.COMMENT {
-		comment = append(comment, toks[len(toks)-1])
-		toks = toks[0 : len(toks)-1]
+	// Need to check last token on the line to see if we should add a semicolon.
+	// Before doing that, pull off the last item, IFF it's a comment. Later
+	// we'll stick the comment back on, following the semicolon.
+	comment := []Lexeme{}
+	if xems[len(xems)-1].token == token.COMMENT {
+		comment = append(comment, xems[len(xems)-1])
+		xems = xems[0 : len(xems)-1]
 	}
 
-	if len(toks) == 0 {
-		return append(toks, comment...)
+	if len(xems) == 0 {
+		// comment was the only thing on the line
+		return comment
 	}
 
-	lastTok := toks[len(toks)-1].token
+	lastTok := xems[len(xems)-1].token
 	if doAddSemiAfter(lastTok) {
-		toks = append(toks, newToken(token.SEMI, ";").at(lineNo, i+1))
+		xems = append(xems, newLexeme(token.SEMI, ";").at(lineNo, i+1))
 	}
 
-	return append(toks, comment...)
+	// reattach comment (if any) and done
+	return append(xems, comment...)
 }
 
+// doAddSemiAfter returns true if we should append a semicolon to the end of the
+// line. We just use the same logic as go (basically).
 func doAddSemiAfter(lastTok token.Token) bool {
 
 	// https://medium.com/golangspec/automatic-semicolon-insertion-in-go-1990338f2649
@@ -135,22 +154,19 @@ func stringRunes(line string) []rune {
 	return chars
 }
 
-func nextToken(chars []rune) (Token, int) {
+func nextLexeme(chars []rune) (Lexeme, int) {
 
 	i := countWhitespace(chars)
 	chars = chars[i:]
 
 	if len(chars) == 0 {
-		return newToken(token.NADA, ""), i
+		return newLexeme(token.NADA, ""), i
 	}
 
 	ch := chars[0]
 
 	if ch == '#' {
-		return Token{
-			token:   token.COMMENT,
-			literal: string(chars),
-		}, i + len(chars)
+		return newLexeme(token.COMMENT, string(chars)), i + len(chars)
 	}
 
 	peek := ' '
@@ -162,84 +178,84 @@ func nextToken(chars []rune) (Token, int) {
 
 	case ':':
 		if peek == '=' {
-			return newToken(token.ASSIGN, ":="), i + 2
+			return newLexeme(token.ASSIGN, ":="), i + 2
 		}
-		return newToken(token.COLON, ":"), i + 1
+		return newLexeme(token.COLON, ":"), i + 1
 
 	case '!':
 		if peek == '=' {
-			return newToken(token.NOT_EQUAL, "!="), i + 2
+			return newLexeme(token.NOT_EQUAL, "!="), i + 2
 		}
-		return newToken(token.NOT, "!"), i + 1
+		return newLexeme(token.NOT, "!"), i + 1
 
 	case '+':
 		if peek == '=' {
-			return newToken(token.ACCUM, "+="), i + 2
+			return newLexeme(token.ACCUM, "+="), i + 2
 		}
-		return newToken(token.PLUS, "+"), i + 1
+		return newLexeme(token.PLUS, "+"), i + 1
 
 	case '>':
 		if peek == '>' {
-			return newToken(token.RPIPE, ">>"), i + 2
+			return newLexeme(token.RPIPE, ">>"), i + 2
 		}
 		if peek == '=' {
-			return newToken(token.GRTR_EQUAL, ">="), i + 2
+			return newLexeme(token.GRTR_EQUAL, ">="), i + 2
 		}
-		return newToken(token.GRTR, ">"), i + 1
+		return newLexeme(token.GRTR, ">"), i + 1
 
 	case '<':
 		if peek == '<' {
-			return newToken(token.LPIPE, "<<"), i + 2
+			return newLexeme(token.LPIPE, "<<"), i + 2
 		}
 		if peek == '=' {
-			return newToken(token.LESS_EQUAL, "<="), i + 2
+			return newLexeme(token.LESS_EQUAL, "<="), i + 2
 		}
-		return newToken(token.LESS, "<"), i + 1
+		return newLexeme(token.LESS, "<"), i + 1
 
 	case '&':
 		if peek == '&' {
-			return newToken(token.LOG_AND, "&&"), i + 2
+			return newLexeme(token.LOG_AND, "&&"), i + 2
 		}
-		return newToken(token.ILLEGAL, "&"), i + 1
+		return newLexeme(token.ILLEGAL, "&"), i + 1
 
 	case '=':
 		if peek == '=' {
-			return newToken(token.EQUAL, "=="), i + 2
+			return newLexeme(token.EQUAL, "=="), i + 2
 		}
-		return newToken(token.ILLEGAL, "="), i + 1
+		return newLexeme(token.ILLEGAL, "="), i + 1
 
 	case '|':
 		if peek == '|' {
-			return newToken(token.LOG_OR, "||"), i + 2
+			return newLexeme(token.LOG_OR, "||"), i + 2
 		}
-		return newToken(token.ILLEGAL, "|"), i + 1
+		return newLexeme(token.ILLEGAL, "|"), i + 1
 
 	case '-':
-		return newToken(token.MINUS, "-"), i + 1
+		return newLexeme(token.MINUS, "-"), i + 1
 	case ',':
-		return newToken(token.COMMA, ","), i + 1
+		return newLexeme(token.COMMA, ","), i + 1
 	case ';':
-		return newToken(token.SEMI, ";"), i + 1
+		return newLexeme(token.SEMI, ";"), i + 1
 	case '.':
-		return newToken(token.PERIOD, "."), i + 1
+		return newLexeme(token.PERIOD, "."), i + 1
 	case '(':
-		return newToken(token.LPAREN, "("), i + 1
+		return newLexeme(token.LPAREN, "("), i + 1
 	case ')':
-		return newToken(token.RPAREN, ")"), i + 1
+		return newLexeme(token.RPAREN, ")"), i + 1
 	case '[':
-		return newToken(token.LSQR, "["), i + 1
+		return newLexeme(token.LSQR, "["), i + 1
 	case ']':
-		return newToken(token.RSQR, "]"), i + 1
+		return newLexeme(token.RSQR, "]"), i + 1
 	case '{':
-		return newToken(token.LBRACE, "{"), i + 1
+		return newLexeme(token.LBRACE, "{"), i + 1
 	case '}':
-		return newToken(token.RBRACE, "}"), i + 1
+		return newLexeme(token.RBRACE, "}"), i + 1
 	case '*':
-		return newToken(token.MULT, "*"), i + 1
+		return newLexeme(token.MULT, "*"), i + 1
 	case '/':
-		return newToken(token.DIV, "/"), i + 1
+		return newLexeme(token.DIV, "/"), i + 1
 	case '%':
-		return newToken(token.MODULO, "%"), i + 1
+		return newLexeme(token.MODULO, "%"), i + 1
 
 	case '$':
 		tok := token.DOLLAR
@@ -247,33 +263,33 @@ func nextToken(chars []rune) (Token, int) {
 			tok = token.DDOLLAR
 		}
 		command, l := scanCommand(chars)
-		return newToken(tok, string(command)), i + l
+		return newLexeme(tok, string(command)), i + l
 	}
 
 	if unicode.IsDigit(ch) {
 		number, isFloat := scanNumeric(chars)
 		if isFloat {
-			return newToken(token.FLOAT, string(number)), i + len(number)
+			return newLexeme(token.FLOAT, string(number)), i + len(number)
 		}
-		return newToken(token.INT, string(number)), i + len(number)
+		return newLexeme(token.INT, string(number)), i + len(number)
 	}
 
 	if unicode.IsLetter(ch) || ch == '_' {
 		ident := string(scanIdent(chars))
 		which := token.CheckIdent(ident)
-		return newToken(which, ident), i + len(ident)
+		return newLexeme(which, ident), i + len(ident)
 	}
 
 	if ch == '"' {
 		str0 := string(scanString(chars))
 		str, err := strconv.Unquote(str0)
 		if err != nil {
-			return newToken(token.ILLEGAL, str0), i + len(str0)
+			return newLexeme(token.ILLEGAL, str0), i + len(str0)
 		}
-		return newToken(token.STRING, str), i + len(str0)
+		return newLexeme(token.STRING, str), i + len(str0)
 	}
 
-	return newToken(token.ILLEGAL, string(ch)), i + 1
+	return newLexeme(token.ILLEGAL, string(ch)), i + 1
 }
 
 func scanString(chars []rune) []rune {
@@ -292,6 +308,9 @@ func scanString(chars []rune) []rune {
 	return r
 }
 
+// scanCommand reads in a "command" which is stuff after a "$" or a "$$". It
+// might be a single symbol, or it might be a complex string in braces, kind of
+// like a quoted string.
 func scanCommand(chars []rune) ([]rune, int) {
 	var r []rune
 	c := 0
@@ -381,11 +400,4 @@ func countWhitespace(chars []rune) int {
 	}
 
 	return i
-}
-
-func newToken(tok token.Token, lit string) Token {
-	return Token{
-		token:   tok,
-		literal: lit,
-	}
 }

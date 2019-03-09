@@ -29,7 +29,7 @@ func main() {
 		fmt.Printf("%3d. %s\n", i+1, l)
 	}
 
-	lexed := lexer.New(result).Toks()
+	lexed := lexer.New(result).Lexemes()
 	for _, t := range lexed {
 		fmt.Printf("%s\n", t.String())
 	}
