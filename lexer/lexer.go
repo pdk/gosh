@@ -3,6 +3,7 @@ package lexer
 import (
 	"fmt"
 	"strconv"
+	"strings"
 	"unicode"
 	"unicode/utf8"
 
@@ -13,11 +14,35 @@ import (
 type Lexer struct {
 	input []string // input is a slice of strings. each string is a line from the input.
 	lexed []Lexeme // the result of lexing an input file is a slice of Lexemes.
+	pos   int      // track position for Next(), Peek()
 }
 
 // Lexemes returns the tokenized result
 func (lex *Lexer) Lexemes() []Lexeme {
 	return lex.lexed
+}
+
+// Next returns the next Lexeme, and increments our position.
+func (lex *Lexer) Next() *Lexeme {
+	if lex.pos >= len(lex.lexed) {
+		return nil
+	}
+
+	l := lex.lexed[lex.pos]
+	lex.pos++
+
+	return &l
+}
+
+// Peek returns the next Lexeme, but does not increment our position.
+func (lex *Lexer) Peek() *Lexeme {
+	if lex.pos >= len(lex.lexed) {
+		return nil
+	}
+
+	l := lex.lexed[lex.pos]
+
+	return &l
 }
 
 // Lexeme contains a lex'd token and the literal value.
@@ -45,6 +70,11 @@ func (lex Lexeme) at(lineNo, charNo int) Lexeme {
 	return lex
 }
 
+// Token returns the token.Token of the Lexeme.
+func (lex Lexeme) Token() token.Token {
+	return lex.token
+}
+
 // String returns a string representation of a Lexeme for user-friendly viewing.
 func (lex Lexeme) String() string {
 	lit := lex.literal
@@ -52,6 +82,15 @@ func (lex Lexeme) String() string {
 		lit = strconv.Quote(lex.literal)
 	}
 	return fmt.Sprintf("%3d, %3d %-10s %s", lex.lineNumber, lex.charNumber, lex.token.String(), lit)
+}
+
+// IndentString useful for printing trees of Lexemes.
+func (lex Lexeme) IndentString(n int) string {
+	lit := lex.literal
+	if lex.token == token.STRING {
+		lit = strconv.Quote(lex.literal)
+	}
+	return fmt.Sprintf("%3d, %3d %-10s %s%s", lex.lineNumber, lex.charNumber, lex.token.String(), strings.Repeat(" ", n), lit)
 }
 
 // New returns a new Lexer. Actually does all the work of lexing the input.
@@ -229,6 +268,12 @@ func nextLexeme(chars []rune) (Lexeme, int) {
 			return newLexeme(token.LOG_OR, "||"), i + 2
 		}
 		return newLexeme(token.ILLEGAL, "|"), i + 1
+
+	case '?':
+		if peek == '=' {
+			return newLexeme(token.QASSIGN, "?="), i + 2
+		}
+		return newLexeme(token.ILLEGAL, "?"), i + 1
 
 	case '-':
 		return newLexeme(token.MINUS, "-"), i + 1

@@ -7,71 +7,72 @@ type Token int
 
 // The list of tokens
 const (
-	ILLEGAL      Token = iota
-	NADA               // no token
-	EOF                // END OF FILE
-	COMMENT            // COMMENT
-	literal_beg        // start of literals
-	IDENT              // main
-	INT                // 12345
-	FLOAT              // 123.45
-	CHAR               // 'a'
-	STRING             // "abc"
-	literal_end        // end of literals
-	operator_beg       // start of operators and delimiters
-	PLUS               // +
-	MINUS              // -
-	MULT               // *
-	DIV                // /
-	MODULO             // %
-	LPIPE              // <<
-	RPIPE              // >>
-	ACCUM              // +=
-	LOG_AND            // &&
-	LOG_OR             // ||
-	EQUAL              // ==
-	LESS               // <
-	GRTR               // >
-	ASSIGN             // :=
-	NOT                // !
-	NOT_EQUAL          // !=
-	LESS_EQUAL         // <=
-	GRTR_EQUAL         // >=
-	LPAREN             // (
-	LSQR               // [
-	LBRACE             // {
-	COMMA              // ,
-	PERIOD             // .
-	RPAREN             // )
-	RSQR               // ]
-	RBRACE             // }
-	SEMI               // ;
-	COLON              // :
-	DOLLAR             // $
-	DDOLLAR            // $$
-	operator_end       // end of operators and delimiters
-	keyword_beg        // start of reserved/key words
-	BREAK              // break
-	CONTINUE           // continue
-	ELSE               // else
-	FOR                // for
-	IN                 // in
-	FUNC               // func
-	IF                 // if
-	IMPORT             // import
-	PKG                // pkg
-	RETURN             // return
-	STRUCT             // struct
-	SWITCH             // switch
-	ISA                // isa
-	HASA               // hasa
-	TRUE               // true
-	FALSE              // false
-	WHILE              // while
-	NIL                // nil
-	ENUM               // enum
-	SYS                // sys
-	keyword_end        // end of reserved/key words
+	ILLEGAL     Token = iota
+	NADA              // no token
+	EOF               // END OF FILE
+	COMMENT           // COMMENT
+	LiteralBeg        // start of literals
+	IDENT             // main
+	INT               // 12345
+	FLOAT             // 123.45
+	CHAR              // 'a'
+	STRING            // "abc"
+	LiteralEnd        // end of literals
+	OperatorBeg       // start of operators and delimiters
+	PLUS              // +
+	MINUS             // -
+	MULT              // *
+	DIV               // /
+	MODULO            // %
+	LPIPE             // <<
+	RPIPE             // >>
+	ACCUM             // +=
+	LOG_AND           // &&
+	LOG_OR            // ||
+	EQUAL             // ==
+	LESS              // <
+	GRTR              // >
+	ASSIGN            // :=
+	QASSIGN           // ?=
+	NOT               // !
+	NOT_EQUAL         // !=
+	LESS_EQUAL        // <=
+	GRTR_EQUAL        // >=
+	LPAREN            // (
+	LSQR              // [
+	LBRACE            // {
+	COMMA             // ,
+	PERIOD            // .
+	RPAREN            // )
+	RSQR              // ]
+	RBRACE            // }
+	SEMI              // ;
+	COLON             // :
+	DOLLAR            // $
+	DDOLLAR           // $$
+	OperatorEnd       // end of operators and delimiters
+	KeywordBeg        // start of reserved/key words
+	BREAK             // break
+	CONTINUE          // continue
+	ELSE              // else
+	FOR               // for
+	IN                // in
+	FUNC              // func
+	IF                // if
+	IMPORT            // import
+	PKG               // pkg
+	RETURN            // return
+	STRUCT            // struct
+	SWITCH            // switch
+	ISA               // isa
+	HASA              // hasa
+	TRUE              // true
+	FALSE             // false
+	WHILE             // while
+	NIL               // nil
+	ENUM              // enum
+	SYS               // sys
+	KeywordEnd        // end of reserved/key words
 )
 
 var tokens = [...]string{
@@ -97,6 +98,7 @@ var tokens = [...]string{
 	LESS:       "LESS",
 	GRTR:       "GRTR",
 	ASSIGN:     "ASSIGN",
+	QASSIGN:    "QASSIGN",
 	NOT:        "NOT",
 	NOT_EQUAL:  "NOT_EQUAL",
 	LESS_EQUAL: "LESS_EQUAL",
