@@ -73,6 +73,8 @@ const (
 	ENUM              // enum
 	SYS               // sys
 	KeywordEnd        // end of reserved/key words
+	FUNCAPPLY         // used by parser
+	METHAPPLY         // user by parser
 )
 
 var tokens = [...]string{
@@ -135,6 +137,8 @@ var tokens = [...]string{
 	NIL:        "NIL",
 	ENUM:       "ENUM",
 	SYS:        "SYS",
+	FUNCAPPLY:  "FUNCAPPLY",
+	METHAPPLY:  "METHAPPLY",
 }
 
 // String returns a string of a Token.

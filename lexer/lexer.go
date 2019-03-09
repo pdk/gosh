@@ -61,6 +61,18 @@ func newLexeme(tok token.Token, lit string) Lexeme {
 	}
 }
 
+// WithToken will override the existing token with a new value.
+func (lex Lexeme) WithToken(tok token.Token) Lexeme {
+	lex.token = tok
+	return lex
+}
+
+// WithLiteral will override the existing literal.
+func (lex Lexeme) WithLiteral(lit string) Lexeme {
+	lex.literal = lit
+	return lex
+}
+
 // at sets a Lexeme's location
 func (lex Lexeme) at(lineNo, charNo int) Lexeme {
 
@@ -73,6 +85,21 @@ func (lex Lexeme) at(lineNo, charNo int) Lexeme {
 // Token returns the token.Token of the Lexeme.
 func (lex Lexeme) Token() token.Token {
 	return lex.token
+}
+
+// LineNo returns the line number the token was found in the input.
+func (lex Lexeme) LineNo() int {
+	return lex.lineNumber
+}
+
+// CharNo returns the character number the token was found in the line.
+func (lex Lexeme) CharNo() int {
+	return lex.charNumber
+}
+
+// Literal returns the string of the actual value found in the input.
+func (lex Lexeme) Literal() string {
+	return lex.literal
 }
 
 // String returns a string representation of a Lexeme for user-friendly viewing.
@@ -440,7 +467,7 @@ func scanIdent(chars []rune) []rune {
 func countWhitespace(chars []rune) int {
 
 	i := 0
-	for unicode.IsSpace(chars[i]) {
+	for i < len(chars) && unicode.IsSpace(chars[i]) {
 		i++
 	}
 
