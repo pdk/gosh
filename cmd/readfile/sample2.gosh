@@ -1,1 +1,12 @@
-thing.field(1)
+if a == b {
+    f(1)
+    #
+    g(12)
+} else {
+    # oink
+    a := 23 # ack
+
+    # bo
+    bo.go()+1
+
+}

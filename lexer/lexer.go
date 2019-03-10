@@ -22,8 +22,47 @@ func (lex *Lexer) Lexemes() []Lexeme {
 	return lex.lexed
 }
 
+// skipForward skips over some things that are challenging for the parser.
+func (lex *Lexer) skipForward() {
+
+	for lex.isComment() || lex.isSemiBrace() {
+		lex.pos++
+	}
+}
+
+func (lex *Lexer) isSemiBrace() bool {
+
+	if lex.pos < len(lex.lexed) && lex.lexed[lex.pos].Token() == token.SEMI {
+
+		// make sure there's something between here and the next RBRACE.
+		for i := lex.pos; i < len(lex.lexed); i++ {
+			if lex.lexed[i].Token() == token.RBRACE {
+				return true
+			}
+
+			if lex.lexed[i].Token() != token.SEMI && lex.lexed[i].Token() != token.COMMENT {
+				break
+			}
+		}
+	}
+
+	return false
+}
+
+func (lex *Lexer) isComment() bool {
+	if lex.pos < len(lex.lexed) &&
+		lex.lexed[lex.pos].Token() == token.COMMENT {
+
+		return true
+	}
+
+	return false
+}
+
 // Next returns the next Lexeme, and increments our position.
 func (lex *Lexer) Next() *Lexeme {
+	lex.skipForward()
+
 	if lex.pos >= len(lex.lexed) {
 		return nil
 	}
@@ -36,6 +75,8 @@ func (lex *Lexer) Next() *Lexeme {
 
 // Peek returns the next Lexeme, but does not increment our position.
 func (lex *Lexer) Peek() *Lexeme {
+	lex.skipForward()
+
 	if lex.pos >= len(lex.lexed) {
 		return nil
 	}

@@ -1,6 +1,7 @@
 package main
 
 import (
+	"fmt"
 	"log"
 	"os"
 
@@ -27,6 +28,12 @@ func main() {
 	// }
 
 	// lex = lexer.New(result)
-	ast := parse.New(lex).Parse()
+	ast, err := parse.New(lex).Parse()
+	if err != nil {
+		log.Printf("%s", err)
+	}
+
 	ast.Print()
+
+	fmt.Printf("%s\n", ast.Sexpr())
 }

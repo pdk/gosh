@@ -2,7 +2,6 @@ package parse
 
 import (
 	"fmt"
-	"log"
 	"strconv"
 	"unicode"
 
@@ -23,11 +22,16 @@ func New(lexer *lexer.Lexer) *Parser {
 }
 
 // Parse returns the result of parsing the input.
-func (p *Parser) Parse() *Node {
-	ast := p.expression(0)
+func (p *Parser) Parse() (*Node, error) {
+
+	ast, err := p.expression(0)
+	if err != nil {
+		return ast, err
+	}
+
 	ast = ast.applyTransforms()
 
-	return ast
+	return ast, nil
 }
 
 // Node is the result of a parse.
@@ -41,14 +45,17 @@ func (n *Node) Print() {
 	n.print(0)
 }
 
+// Literal returns the literal value of the lexeme.
+func (n *Node) Literal() string {
+	return n.lexeme.Literal()
+}
+
 // Token returns the token of the lexeme of the node.
 func (n *Node) Token() token.Token {
 	return n.lexeme.Token()
 }
 
 func (n *Node) applyTransforms() *Node {
-
-	var newChildren []*Node
 
 	if n.Token() == token.LPAREN {
 
@@ -61,9 +68,13 @@ func (n *Node) applyTransforms() *Node {
 			l := n.lexeme.WithToken(token.METHAPPLY).WithLiteral("m-apply")
 			n.lexeme = &l
 
-			newChildren = append(newChildren, n.children[0].children[0])
-			newChildren = append(newChildren, n.children[0].children[1])
-			n.children = n.children[1:]
+			newChildren := []*Node{
+				first.children[0],
+				first.children[1],
+			}
+			newChildren = append(newChildren, n.children[1:]...)
+
+			n.children = newChildren
 
 		} else {
 
@@ -74,11 +85,34 @@ func (n *Node) applyTransforms() *Node {
 		}
 	}
 
+	var newChildren []*Node
 	for _, x := range n.children {
 		newChildren = append(newChildren, x.applyTransforms())
 	}
 
 	n.children = newChildren
+
+	if n.Token() == token.SEMI {
+
+		first := n.firstChild()
+
+		// unnest statements
+		// (; (; (; (:= a 1) (:= b 2)) (:= c 3)))
+		// ==> (; (:= a 1) (:= b 2)) (:= c 3))
+		if first != nil && (first.Token() == token.SEMI || first.Token() == token.STMTS) {
+
+			l := n.lexeme.WithToken(token.STMTS).WithLiteral("stmts")
+			n.lexeme = &l
+
+			newChildren := first.children
+			newChildren = append(newChildren, n.children[1:]...)
+			n.children = newChildren
+		}
+
+		if len(n.children) == 1 {
+			return n.children[0]
+		}
+	}
 
 	return n
 }
@@ -108,9 +142,9 @@ func (n *Node) Children() []*Node {
 	return n.children
 }
 
-func containsWhitespace(s string) bool {
+func containsQuotable(s string) bool {
 	for _, c := range s {
-		if unicode.IsSpace(c) {
+		if c == '(' || c == ')' || unicode.IsSpace(c) {
 			return true
 		}
 	}
@@ -118,7 +152,7 @@ func containsWhitespace(s string) bool {
 }
 
 func sexprQuote(s string) string {
-	if containsWhitespace(s) || s == "(" || s == ")" {
+	if containsQuotable(s) {
 		return strconv.Quote(s)
 	}
 	return s
@@ -143,11 +177,11 @@ func (n *Node) Sexpr() string {
 	return s
 }
 
-type nudFunc func(*Node, *Parser) *Node
+type nudFunc func(*Node, *Parser) (*Node, error)
 
-type ledFunc func(*Node, *Parser, *Node) *Node
+type ledFunc func(*Node, *Parser, *Node) (*Node, error)
 
-type stdFunc func(*Node, *Parser) *Node
+type stdFunc func(*Node, *Parser) (*Node, error)
 
 // tdopEntry contains the information required to drive the parser.
 type tdopEntry struct {
@@ -164,6 +198,8 @@ var tdopRegistry [token.KeywordEnd]tdopEntry
 const (
 	P_EOF = iota * 2
 	P_UNEXPECTED
+
+	P_SEPARATOR
 	P_SELF
 
 	P_PIPE
@@ -175,6 +211,8 @@ const (
 	P_PLUSMINUS
 	P_MULTDIV
 	P_PREFIX
+	P_CONTROL
+	P_BRACE
 	P_FUNC
 	P_PERIOD
 )
@@ -219,7 +257,7 @@ func init() {
 	tdopRegistry[token.LPIPE] = infix(P_PIPE)
 	tdopRegistry[token.RPIPE] = rinfix(P_PIPE)
 
-	tdopRegistry[token.EOF] = consumable()
+	tdopRegistry[token.EOF] = eof(P_EOF)
 	tdopRegistry[token.COMMENT] = consumable()
 
 	tdopRegistry[token.IDENT] = self()
@@ -231,15 +269,15 @@ func init() {
 	tdopRegistry[token.TRUE] = self()
 	tdopRegistry[token.FALSE] = self()
 
-	tdopRegistry[token.SEMI] = consumable()
+	tdopRegistry[token.SEMI] = infixOrNaught(P_SEPARATOR)
 
-	tdopRegistry[token.LPAREN] = leftParen()
+	tdopRegistry[token.LPAREN] = leftParen(P_FUNC)
 	tdopRegistry[token.LSQR] = tdopEntry{}
-	tdopRegistry[token.LBRACE] = tdopEntry{}
+	tdopRegistry[token.LBRACE] = tdopEntry{} // leftBrace(P_BRACE)
 
 	tdopRegistry[token.RPAREN] = unbalanced()
-	// tdopRegistry[token.RSQR] = tdopEntry{}
-	// tdopRegistry[token.RBRACE] = tdopEntry{}
+	tdopRegistry[token.RSQR] = unbalanced()
+	tdopRegistry[token.RBRACE] = unbalanced()
 
 	tdopRegistry[token.COLON] = tdopEntry{}
 	tdopRegistry[token.DOLLAR] = tdopEntry{}
@@ -249,7 +287,7 @@ func init() {
 	tdopRegistry[token.FOR] = tdopEntry{}
 	tdopRegistry[token.IN] = tdopEntry{}
 	tdopRegistry[token.FUNC] = tdopEntry{}
-	tdopRegistry[token.IF] = tdopEntry{}
+	tdopRegistry[token.IF] = ifExpr(P_CONTROL)
 	tdopRegistry[token.IMPORT] = tdopEntry{}
 	tdopRegistry[token.PKG] = tdopEntry{}
 	tdopRegistry[token.STRUCT] = tdopEntry{}
@@ -259,6 +297,14 @@ func init() {
 	tdopRegistry[token.SYS] = tdopEntry{}
 }
 
+func eof(bp int) tdopEntry {
+	return tdopEntry{
+		bindingPower: bp,
+		nud: func(node *Node, p *Parser) (*Node, error) {
+			return node, nil
+		},
+	}
+}
 func consumable() tdopEntry {
 	return tdopEntry{
 		bindingPower: 0,
@@ -275,26 +321,175 @@ func bindPowerOf(lex *lexer.Lexeme) int {
 	return tdopRegistry[lex.Token()].bindingPower
 }
 
-func leftParen() tdopEntry {
+func ifExprNud(node *Node, p *Parser) (*Node, error) {
+
+	exp, err := p.expression(0)
+	node.children = append(node.children, exp)
+	if err != nil {
+		return node, err
+	}
+
+	node, err = parseBlockToChild(node, p)
+	if err != nil {
+		return node, err
+	}
+
+	if p.lexer.Peek().Token() != token.ELSE {
+		return node, nil
+	}
+
+	_, err = p.advance(token.ELSE)
+	if err != nil {
+		return node, err
+	}
+
+	switch p.lexer.Peek().Token() {
+	case token.LBRACE:
+		// simple else condition
+
+		node, err = parseBlockToChild(node, p)
+		if err != nil {
+			return node, err
+		}
+
+	case token.IF:
+		// chained if
+
+		_, err = p.advance(token.IF)
+		if err != nil {
+			return node, err
+		}
+
+		return ifExprNud(node, p)
+
+	case token.SEMI:
+		break
+
+	default:
+		return node, parseError(newNode(p.lexer.Peek()), "expecting either { or if")
+	}
+
+	return node, err
+}
+
+func ifExpr(bp int) tdopEntry {
 	return tdopEntry{
-		bindingPower: P_FUNC,
-		nud: func(node *Node, p *Parser) *Node {
-			n := p.expression(P_UNEXPECTED)
-			p.advance(token.RPAREN)
-			return n
+		bindingPower: bp,
+		nud:          ifExprNud,
+	}
+}
+
+func parseBlockToChild(node *Node, p *Parser) (*Node, error) {
+
+	_, err := p.advance(token.LBRACE)
+	if err != nil {
+		return node, err
+	}
+
+	exp, err := p.expression(P_UNEXPECTED)
+	node.children = append(node.children, exp)
+	if err != nil {
+		return node, err
+	}
+
+	_, err = p.advance(token.RBRACE)
+	return node, err
+}
+
+func leftBrace(bindPower int) tdopEntry {
+	return tdopEntry{
+		bindingPower: bindPower,
+		nud: func(node *Node, p *Parser) (*Node, error) {
+
+			n, err := p.expression(P_UNEXPECTED)
+			if err != nil {
+				return n, err
+			}
+
+			_, err = p.advance(token.RBRACE)
+			return n, err
 		},
-		led: func(node *Node, p *Parser, left *Node) *Node {
+		led: func(node *Node, p *Parser, left *Node) (*Node, error) {
+
 			node.children = append(node.children, left)
-			if p.lexer.Peek().Token() != token.RPAREN {
-				node.children = append(node.children, p.expression(P_COMMA))
-				for p.lexer.Peek().Token() == token.COMMA {
-					p.advance(token.COMMA)
-					node.children = append(node.children, p.expression(P_COMMA))
+			if p.lexer.Peek().Token() != token.RBRACE {
+
+				exp, err := p.expression(P_UNEXPECTED)
+				// exp, err := p.expression(P_SEPARATOR)
+				if err != nil {
+					return node, err
+				}
+
+				node.children = append(node.children, exp)
+
+				for p.lexer.Peek().Token() == token.SEMI {
+					_, err := p.advance(token.SEMI)
+					if err != nil {
+						return node, err
+					}
+
+					exp, err := p.expression(P_SEPARATOR)
+					if err != nil {
+						return node, err
+					}
+
+					node.children = append(node.children, exp)
 				}
 			}
-			p.advance(token.RPAREN)
-			return node
+
+			_, err := p.advance(token.RBRACE)
+			return node, err
 		},
+	}
+}
+
+func leftParen(bindPower int) tdopEntry {
+	return tdopEntry{
+		bindingPower: bindPower,
+		nud: func(node *Node, p *Parser) (*Node, error) {
+			n, err := p.expression(P_UNEXPECTED)
+			if err != nil {
+				return n, err
+			}
+			_, err = p.advance(token.RPAREN)
+
+			return n, err
+		},
+		led: func(node *Node, p *Parser, left *Node) (*Node, error) {
+			node.children = append(node.children, left)
+			if p.lexer.Peek().Token() != token.RPAREN {
+
+				exp, err := p.expression(P_COMMA)
+				if err != nil {
+					return node, err
+				}
+
+				node.children = append(node.children, exp)
+
+				for p.lexer.Peek().Token() == token.COMMA {
+					_, err := p.advance(token.COMMA)
+					if err != nil {
+						return node, err
+					}
+
+					exp, err := p.expression(P_COMMA)
+					if err != nil {
+						return node, err
+					}
+
+					node.children = append(node.children, exp)
+				}
+			}
+
+			_, err := p.advance(token.RPAREN)
+			return node, err
+		},
+	}
+}
+
+func block() tdopEntry {
+	return tdopEntry{
+		bindingPower: 0,
 	}
 }
 
@@ -307,9 +502,14 @@ func unbalanced() tdopEntry {
 func prefix(rightBP int) tdopEntry {
 	return tdopEntry{
 		bindingPower: 0,
-		nud: func(node *Node, p *Parser) *Node {
-			node.children = append(node.children, p.expression(rightBP))
-			return node
+		nud: func(node *Node, p *Parser) (*Node, error) {
+			exp, err := p.expression(rightBP)
+			if err != nil {
+				return node, err
+			}
+
+			node.children = append(node.children, exp)
+			return node, nil
 		},
 	}
 }
@@ -317,25 +517,17 @@ func prefix(rightBP int) tdopEntry {
 func infix(bindingPower int) tdopEntry {
 	return tdopEntry{
 		bindingPower: bindingPower,
-		led: func(node *Node, p *Parser, left *Node) *Node {
+		led: func(node *Node, p *Parser, left *Node) (*Node, error) {
 			node.children = append(node.children, left)
-			node.children = append(node.children, p.expression(bindingPower))
-			return node
-		},
-	}
-}
 
-func prefixInfix(prefixBP, infixBP int) tdopEntry {
-	return tdopEntry{
-		bindingPower: infixBP,
-		nud: func(node *Node, p *Parser) *Node {
-			node.children = append(node.children, p.expression(prefixBP))
-			return node
-		},
-		led: func(node *Node, p *Parser, left *Node) *Node {
-			node.children = append(node.children, left)
-			node.children = append(node.children, p.expression(infixBP))
-			return node
+			exp, err := p.expression(bindingPower)
+			if err != nil {
+				return node, err
+			}
+
+			node.children = append(node.children, exp)
+
+			return node, nil
 		},
 	}
 }
@@ -343,10 +535,70 @@ func prefixInfix(prefixBP, infixBP int) tdopEntry {
 func rinfix(bindingPower int) tdopEntry {
 	return tdopEntry{
 		bindingPower: bindingPower,
-		led: func(node *Node, p *Parser, left *Node) *Node {
+		led: func(node *Node, p *Parser, left *Node) (*Node, error) {
 			node.children = append(node.children, left)
-			node.children = append(node.children, p.expression(bindingPower-1))
-			return node
+
+			exp, err := p.expression(bindingPower - 1)
+			if err != nil {
+				return node, err
+			}
+
+			node.children = append(node.children, exp)
+
+			return node, nil
+		},
+	}
+}
+
+func infixOrNaught(bindingPower int) tdopEntry {
+	return tdopEntry{
+		bindingPower: bindingPower,
+		nud: func(node *Node, p *Parser) (*Node, error) {
+			exp, err := p.expression(bindingPower)
+			if err != nil {
+				return node, err
+			}
+
+			node.children = append(node.children, exp)
+
+			return node, nil
+		},
+		led: func(node *Node, p *Parser, left *Node) (*Node, error) {
+			node.children = append(node.children, left)
+			if p.lexer.Peek().Token() != token.EOF {
+				exp, err := p.expression(bindingPower)
+				if err != nil {
+					return node, err
+				}
+
+				node.children = append(node.children, exp)
+			}
+			return node, nil
+		},
+	}
+}
+
+func prefixInfix(prefixBP, infixBP int) tdopEntry {
+	return tdopEntry{
+		bindingPower: infixBP,
+		nud: func(node *Node, p *Parser) (*Node, error) {
+			exp, err := p.expression(prefixBP)
+			if err != nil {
+				return node, err
+			}
+
+			node.children = append(node.children, exp)
+			return node, nil
+		},
+		led: func(node *Node, p *Parser, left *Node) (*Node, error) {
+			node.children = append(node.children, left)
+			exp, err := p.expression(infixBP)
+			if err != nil {
+				return node, err
+			}
+
+			node.children = append(node.children, exp)
+			return node, nil
 		},
 	}
 }
@@ -354,8 +606,8 @@ func rinfix(bindingPower int) tdopEntry {
 func self() tdopEntry {
 	return tdopEntry{
 		bindingPower: P_SELF,
-		nud: func(node *Node, p *Parser) *Node {
-			return node
+		nud: func(node *Node, p *Parser) (*Node, error) {
+			return node, nil
 		},
 	}
 }
@@ -376,41 +628,52 @@ func (n *Node) bind() int {
 	return tdopRegistry[n.Token()].bindingPower
 }
 
-func (p *Parser) expression(rbp int) *Node {
+func parseError(at *Node, mesg string) error {
+	return fmt.Errorf("parse error on line %d, pos %d, token %s: %s",
+		at.lexeme.LineNo(), at.lexeme.CharNo(), at.lexeme.Literal(), mesg)
+}
 
+func (p *Parser) expression(rbp int) (*Node, error) {
+
+	var err error
 	var left *Node
 	node := newNode(p.lexer.Next())
 
+	if node.Token() == token.EOF {
+		return node, nil
+	}
+
 	if node.nud() != nil {
-		left = node.nud()(node, p)
+		left, err = node.nud()(node, p)
+		if err != nil {
+			return node, err
+		}
 	} else {
-		log.Fatalf("parser error: unexpected left token %s %s at %d,%d",
-			node.Token().String(),
-			strconv.Quote(node.lexeme.Literal()),
-			node.lexeme.LineNo(), node.lexeme.CharNo())
+		return node, parseError(node, "unexpected token (left)")
 	}
 
 	for rbp < bindPowerOf(p.lexer.Peek()) {
 		node := newNode(p.lexer.Next())
 		if node.led() != nil {
-			left = node.led()(node, p, left)
+			left, err = node.led()(node, p, left)
+			if err != nil {
+				return node, err
+			}
 		} else {
-			log.Fatalf("parser error: unexpected right token %s %s at %d,%d",
-				node.Token().String(),
-				strconv.Quote(node.lexeme.Literal()),
-				node.lexeme.LineNo(), node.lexeme.CharNo())
+			return node, parseError(node, "unexpected token (right)")
 		}
 	}
 
-	return left
+	return left, nil
 }
 
-func (p *Parser) advance(match token.Token) *Node {
+func (p *Parser) advance(match token.Token) (*Node, error) {
 
-	next := p.lexer.Next()
+	next := newNode(p.lexer.Next())
+
 	if next.Token() != match {
-		log.Fatalf("failed to process (3): expecting %s", match.String())
+		return next, parseError(next, fmt.Sprintf("expecting %s", match.String()))
 	}
 
-	return newNode(next)
+	return next, nil
 }

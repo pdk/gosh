@@ -1,7 +1,6 @@
 package parse_test
 
 import (
-	"fmt"
 	"strings"
 	"testing"
 
@@ -12,10 +11,10 @@ import (
 
 func TestBinaries(t *testing.T) {
 
-	checkParse(t, "1+2", tr("+", "1", "2"), "simple add")
-	checkParse(t, "3*4", tr("*", "3", "4"), "simple mult")
-	checkParse(t, "5-6", tr("-", "5", "6"), "simple subtract")
-	checkParse(t, "7/8", tr("/", "7", "8"), "simple div")
+	checkSexpr(t, "1+2", "(+ 1 2)", "simple add")
+	checkSexpr(t, "3*4", "(* 3 4)", "simple mult")
+	checkSexpr(t, "5-6", "(- 5 6)", "simple subtract")
+	checkSexpr(t, "7/8", "(/ 7 8)", "simple div")
 }
 
 func TestSimpleExpr(t *testing.T) {
@@ -69,72 +68,69 @@ func TestString(t *testing.T) {
 func TestErg(t *testing.T) {
 
 	checkSexpr(t, "x := 1*(2+3)/doit(3)", "(:= x (/ (* 1 (+ 2 3)) (f-apply doit 3)))", "mixed")
-
 }
+
+func TestStatments(t *testing.T) {
+
+	checkSexpr(t, "a := 1\nb := 2\nc:=3", "(stmts (:= a 1) (:= b 2) (:= c 3))", "multiple statements")
+	checkSexpr(t, "a==b &&\ndoThis() ||\n doThat()", "(|| (&& (== a b) (f-apply doThis)) (f-apply doThat))", "multiline conditional")
+	checkSexpr(t, "a==b &&\n(doThis() ||\n doThat())", "(&& (== a b) (|| (f-apply doThis) (f-apply doThat)))", "multiline conditional")
+	checkSexpr(t, "a;b;c;d;e", "(stmts a b c d e)", "many")
+	checkSexpr(t, "", "", "none")
+	checkSexpr(t, "a", "a", "none")
+	checkSexpr(t, "a;b", "(stmts a b)", "inner semi")
+	checkSexpr(t, "a;b;", "(stmts a b)", "inner, right semi")
+	checkSexpr(t, ";a;b", "(stmts a b)", "left, inner semi")
+	checkSexpr(t, ";a;b;", "(stmts a b)", "semi all around")
+	checkSexpr(t, ";(((1+2)));", "(+ 1 2)", "parens and semis")
+}
+
+func TestIf(t *testing.T) {
+
+	checkSexpr(t, "if true { x:=true }", "(if true (:= x true))", "basic if")
+	checkSexpr(t, "if true { x:=true } else { x := false }", "(if true (:= x true) (:= x false))", "basic if-else")
+	checkSexpr(t, `
+		if true {
+			x:=true
+		} else if a<b {
+			x := false
+		}`, "(if true (:= x true) (< a b) (:= x false))", "if-else-if")
+	checkSexpr(t, `
+		if true {
+			x:=true
+		} else if a<b {
+			x := false
+		} else if !true {
+			f(g(x))
+			y := "fred"
+		} else {
+			dotThat()
+		}`, "(if true (:= x true) (< a b) (:= x false) (! true) (; (f-apply f (f-apply g x)) (:= y fred)) (f-apply dotThat))", "if-else-if")
+}
+
+//
+// Helpers below
+//
 
 func checkSexpr(t *testing.T, input, expected, preface string) {
 
-	result := parseInput(input).Sexpr()
+	result, err := parseInput(input)
+	if err != nil {
+		t.Errorf("did not expect error for input \"%s\", got: %s", input, err)
+		return
+	}
 
-	if result != expected {
-		t.Errorf("%s: expected %s but got %s", preface, expected, result)
+	sexpr := result.Sexpr()
+	if sexpr != expected {
+		t.Errorf("%s: expected %s but got %s", preface, expected, sexpr)
 	}
 }
 
-func parseInput(input string) *parse.Node {
+func parseInput(input string) (*parse.Node, error) {
 
 	lines := reader.ReadLinesToStrings(strings.NewReader(input))
 	lxr := lexer.New(lines)
 	parser := parse.New(lxr)
 
 	return parser.Parse()
-}
-
-func checkParse(t *testing.T, input string, exp tree, preface string) {
-	checkMatch(t, parseInput(input), exp, preface+": "+input)
-}
-
-func checkMatch(t *testing.T, ast *parse.Node, exp tree, preface string) {
-
-	f := ast.Value().Literal()
-	e := exp.value
-
-	if f != e {
-		t.Errorf("%s: expected %s but found %s", preface, e, f)
-	}
-
-	for i, c := range exp.children {
-		checkMatch(t, ast.Children()[i], c, preface)
-	}
-}
-
-type tree struct {
-	value    string
-	children []tree
-}
-
-func tr(v string, kids ...interface{}) tree {
-
-	n := tree{
-		value: v,
-	}
-
-	for _, k := range kids {
-
-		sval, ok := k.(string)
-		if ok {
-			n.children = append(n.children, tr(sval))
-			continue
-		}
-
-		tval, ok := k.(tree)
-		if ok {
-			n.children = append(n.children, tval)
-			continue
-		}
-
-		panic(fmt.Sprintf("unhandled type %T in tr()", k))
-	}
-
-	return n
 }

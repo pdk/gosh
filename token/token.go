@@ -7,74 +7,77 @@ type Token int
 
 // The list of tokens
 const (
-	ILLEGAL     Token = iota
-	NADA              // no token
-	EOF               // END OF FILE
-	COMMENT           // COMMENT
-	LiteralBeg        // start of literals
-	IDENT             // main
-	INT               // 12345
-	FLOAT             // 123.45
-	CHAR              // 'a'
-	STRING            // "abc"
-	LiteralEnd        // end of literals
-	OperatorBeg       // start of operators and delimiters
-	PLUS              // +
-	MINUS             // -
-	MULT              // *
-	DIV               // /
-	MODULO            // %
-	LPIPE             // <<
-	RPIPE             // >>
-	ACCUM             // +=
-	LOG_AND           // &&
-	LOG_OR            // ||
-	EQUAL             // ==
-	LESS              // <
-	GRTR              // >
-	ASSIGN            // :=
-	QASSIGN           // ?=
-	NOT               // !
-	NOT_EQUAL         // !=
-	LESS_EQUAL        // <=
-	GRTR_EQUAL        // >=
-	LPAREN            // (
-	LSQR              // [
-	LBRACE            // {
-	COMMA             // ,
-	PERIOD            // .
-	RPAREN            // )
-	RSQR              // ]
-	RBRACE            // }
-	SEMI              // ;
-	COLON             // :
-	DOLLAR            // $
-	DDOLLAR           // $$
-	OperatorEnd       // end of operators and delimiters
-	KeywordBeg        // start of reserved/key words
-	BREAK             // break
-	CONTINUE          // continue
-	ELSE              // else
-	FOR               // for
-	IN                // in
-	FUNC              // func
-	IF                // if
-	IMPORT            // import
-	PKG               // pkg
-	RETURN            // return
-	STRUCT            // struct
-	SWITCH            // switch
-	ISA               // isa
-	HASA              // hasa
-	TRUE              // true
-	FALSE             // false
-	WHILE             // while
-	NIL               // nil
-	ENUM              // enum
-	SYS               // sys
-	KeywordEnd        // end of reserved/key words
-	FUNCAPPLY         // used by parser
-	METHAPPLY         // user by parser
+	ILLEGAL             Token = iota
+	NADA                      // no token
+	EOF                       // END OF FILE
+	COMMENT                   // COMMENT
+	LiteralBeg                // start of literals
+	IDENT                     // main
+	INT                       // 12345
+	FLOAT                     // 123.45
+	CHAR                      // 'a'
+	STRING                    // "abc"
+	LiteralEnd                // end of literals
+	OperatorBeg               // start of operators and delimiters
+	PLUS                      // +
+	MINUS                     // -
+	MULT                      // *
+	DIV                       // /
+	MODULO                    // %
+	LPIPE                     // <<
+	RPIPE                     // >>
+	ACCUM                     // +=
+	LOG_AND                   // &&
+	LOG_OR                    // ||
+	EQUAL                     // ==
+	LESS                      // <
+	GRTR                      // >
+	ASSIGN                    // :=
+	QASSIGN                   // ?=
+	NOT                       // !
+	NOT_EQUAL                 // !=
+	LESS_EQUAL                // <=
+	GRTR_EQUAL                // >=
+	LPAREN                    // (
+	LSQR                      // [
+	LBRACE                    // {
+	COMMA                     // ,
+	PERIOD                    // .
+	RPAREN                    // )
+	RSQR                      // ]
+	RBRACE                    // }
+	SEMI                      // ;
+	COLON                     // :
+	DOLLAR                    // $
+	DDOLLAR                   // $$
+	OperatorEnd               // end of operators and delimiters
+	KeywordBeg                // start of reserved/key words
+	BREAK                     // break
+	CONTINUE                  // continue
+	ELSE                      // else
+	FOR                       // for
+	IN                        // in
+	FUNC                      // func
+	IF                        // if
+	IMPORT                    // import
+	PKG                       // pkg
+	RETURN                    // return
+	STRUCT                    // struct
+	SWITCH                    // switch
+	ISA                       // isa
+	HASA                      // hasa
+	TRUE                      // true
+	FALSE                     // false
+	WHILE                     // while
+	NIL                       // nil
+	ENUM                      // enum
+	SYS                       // sys
+	KeywordEnd                // end of reserved/key words
+	TransformResultsBeg       // start of items produced by parser transforms
+	FUNCAPPLY                 // function apply
+	METHAPPLY                 // method apply
+	STMTS                     //  statements
+	TransformResultsEnd       // end of items produced by parser transforms
 )
 
 var tokens = [...]string{
@@ -139,6 +142,7 @@ var tokens = [...]string{
 	SYS:        "SYS",
 	FUNCAPPLY:  "FUNCAPPLY",
 	METHAPPLY:  "METHAPPLY",
+	STMTS:      "STMTS",
 }
 
 // String returns a string of a Token.
