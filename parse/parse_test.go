@@ -108,6 +108,21 @@ func TestIf(t *testing.T) {
 		} else {
 			dotThat()
 		}`, "(if true (:= x true) (< a b) (:= x false) (! true) (stmts (f-apply f (f-apply g x)) (:= y fred)) (f-apply dotThat))", "if-else-if")
+	checkSexpr(t, `
+		if true {
+			x:=true
+			# howdy
+		} else if a<b {
+			x := false#comments abound
+		} else if !true {
+			# why
+			f(g(x)) # are there
+			y := "fred"
+			# so many?
+		} else {
+			dotThat()
+			# i wonder
+		}`, "(if true (:= x true) (< a b) (:= x false) (! true) (stmts (f-apply f (f-apply g x)) (:= y fred)) (f-apply dotThat))", "if-else-if + comments")
 }
 
 func TestMultilineIf(t *testing.T) {
