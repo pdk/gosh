@@ -2,6 +2,7 @@ package lexer
 
 import (
 	"fmt"
+	"log"
 	"strconv"
 	"strings"
 	"unicode"
@@ -22,6 +23,12 @@ func (lex *Lexer) Lexemes() []Lexeme {
 	return lex.lexed
 }
 
+func (lex *Lexer) LogDump() {
+	for _, x := range lex.lexed {
+		log.Printf("%s", x.String())
+	}
+}
+
 // skipForward skips over some things that are challenging for the parser.
 func (lex *Lexer) skipForward() {
 
@@ -30,6 +37,8 @@ func (lex *Lexer) skipForward() {
 	}
 }
 
+// isSemiBrace returns true if there is nothing between here and the next right
+// brace but comments and semicolons.
 func (lex *Lexer) isSemiBrace() bool {
 
 	if lex.pos < len(lex.lexed) && lex.lexed[lex.pos].Token() == token.SEMI {

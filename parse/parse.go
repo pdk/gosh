@@ -55,6 +55,8 @@ func (n *Node) Token() token.Token {
 	return n.lexeme.Token()
 }
 
+// applyTransforms does some post-part, pre-eval transformations to "clean
+// things up a bit".
 func (n *Node) applyTransforms() *Node {
 
 	if n.Token() == token.LPAREN {
@@ -94,15 +96,15 @@ func (n *Node) applyTransforms() *Node {
 
 	if n.Token() == token.SEMI {
 
+		l := n.lexeme.WithToken(token.STMTS).WithLiteral("stmts")
+		n.lexeme = &l
+
 		first := n.firstChild()
 
 		// unnest statements
 		// (; (; (; (:= a 1) (:= b 2)) (:= c 3)))
 		// ==> (; (:= a 1) (:= b 2)) (:= c 3))
 		if first != nil && (first.Token() == token.SEMI || first.Token() == token.STMTS) {
-
-			l := n.lexeme.WithToken(token.STMTS).WithLiteral("stmts")
-			n.lexeme = &l
 
 			newChildren := first.children
 			newChildren = append(newChildren, n.children[1:]...)
@@ -289,7 +291,7 @@ func init() {
 	tdopRegistry[token.FUNC] = tdopEntry{}
 	tdopRegistry[token.IF] = ifExpr(P_CONTROL)
 	tdopRegistry[token.IMPORT] = tdopEntry{}
-	tdopRegistry[token.PKG] = tdopEntry{}
+	tdopRegistry[token.PKG] = prefix(P_PREFIX)
 	tdopRegistry[token.STRUCT] = tdopEntry{}
 	tdopRegistry[token.SWITCH] = tdopEntry{}
 	tdopRegistry[token.WHILE] = tdopEntry{}
@@ -384,6 +386,15 @@ func parseBlockToChild(node *Node, p *Parser) (*Node, error) {
 	_, err := p.advance(token.LBRACE)
 	if err != nil {
 		return node, err
+	}
+
+	if p.lexer.Peek().Token() == token.RBRACE {
+		brace := p.lexer.Next()
+
+		empty := brace.WithToken(token.SEMI).WithLiteral(";")
+
+		node.children = append(node.children, newNode(&empty))
+		return node, nil
 	}
 
 	exp, err := p.expression(P_UNEXPECTED)

@@ -87,6 +87,8 @@ func TestStatments(t *testing.T) {
 
 func TestIf(t *testing.T) {
 
+	checkSexpr(t, "if p {}", "(if p stmts)", "empty if")
+	checkSexpr(t, "if a!=b{\na:=b # cmt\n}", "(if (!= a b) (:= a b))", "if w/comment")
 	checkSexpr(t, "if true { x:=true }", "(if true (:= x true))", "basic if")
 	checkSexpr(t, "if true { x:=true } else { x := false }", "(if true (:= x true) (:= x false))", "basic if-else")
 	checkSexpr(t, `
@@ -105,7 +107,15 @@ func TestIf(t *testing.T) {
 			y := "fred"
 		} else {
 			dotThat()
-		}`, "(if true (:= x true) (< a b) (:= x false) (! true) (; (f-apply f (f-apply g x)) (:= y fred)) (f-apply dotThat))", "if-else-if")
+		}`, "(if true (:= x true) (< a b) (:= x false) (! true) (stmts (f-apply f (f-apply g x)) (:= y fred)) (f-apply dotThat))", "if-else-if")
+}
+
+func TestMultilineIf(t *testing.T) {
+
+	// make sure the if and else blocks don't get collapsed by the stmts-collapser transform.
+	checkSexpr(t, "if p {a;b;c} else {d;e;f}", "(if p (stmts a b c) (stmts d e f))", "multi-stmt if-else")
+	checkSexpr(t, "if p {a;b;c} else if q {;d;e;f;} else if r {} else {g()}",
+		"(if p (stmts a b c) q (stmts d e f) r stmts (f-apply g))", "complex multi-branch if")
 }
 
 //
