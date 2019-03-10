@@ -83,6 +83,10 @@ func TestStatments(t *testing.T) {
 	checkSexpr(t, ";a;b", "(stmts a b)", "left, inner semi")
 	checkSexpr(t, ";a;b;", "(stmts a b)", "semi all around")
 	checkSexpr(t, ";(((1+2)));", "(+ 1 2)", "parens and semis")
+
+	checkSexpr(t, "a\nb\n", "(stmts a b)", "inner, right semi")
+	checkSexpr(t, ";a\nb", "(stmts a b)", "left, inner semi")
+	checkSexpr(t, ";a;b;", "(stmts a b)", "semi all around")
 }
 
 func TestIf(t *testing.T) {
@@ -123,6 +127,13 @@ func TestIf(t *testing.T) {
 			dotThat()
 			# i wonder
 		}`, "(if true (:= x true) (< a b) (:= x false) (! true) (stmts (f-apply f (f-apply g x)) (:= y fred)) (f-apply dotThat))", "if-else-if + comments")
+}
+
+func TestEmbedIf(t *testing.T) {
+
+	checkSexpr(t, "if p { if q { if r { oink() }}}", "(if p (if q (if r (f-apply oink))))", "embedded if")
+	checkSexpr(t, "if p { if q { if r { oink() }} else { boink() }}",
+		"(if p (if q (if r (f-apply oink)) (f-apply boink)))", "embedded if")
 }
 
 func TestMultilineIf(t *testing.T) {

@@ -96,14 +96,16 @@ func (n *Node) applyTransforms() *Node {
 
 	if n.Token() == token.SEMI {
 
+		// rename ";" to "stmts", cuz it's just a chain of statements, actually.
+		// (; ...) ==> (stmts ...)
 		l := n.lexeme.WithToken(token.STMTS).WithLiteral("stmts")
 		n.lexeme = &l
 
 		first := n.firstChild()
 
 		// unnest statements
-		// (; (; (; (:= a 1) (:= b 2)) (:= c 3)))
-		// ==> (; (:= a 1) (:= b 2)) (:= c 3))
+		// (stmts (; (; (:= a 1) (:= b 2)) (:= c 3)))
+		// ==> (stmts (:= a 1) (:= b 2) (:= c 3))
 		if first != nil && (first.Token() == token.SEMI || first.Token() == token.STMTS) {
 
 			newChildren := first.children
@@ -183,14 +185,11 @@ type nudFunc func(*Node, *Parser) (*Node, error)
 
 type ledFunc func(*Node, *Parser, *Node) (*Node, error)
 
-type stdFunc func(*Node, *Parser) (*Node, error)
-
 // tdopEntry contains the information required to drive the parser.
 type tdopEntry struct {
 	bindingPower int
 	nud          nudFunc
 	led          ledFunc
-	std          stdFunc
 }
 
 var tdopRegistry [token.KeywordEnd]tdopEntry
@@ -498,12 +497,6 @@ func leftParen(bindPower int) tdopEntry {
 	}
 }
 
-func block() tdopEntry {
-	return tdopEntry{
-		bindingPower: 0,
-	}
-}
-
 func unbalanced() tdopEntry {
 	return tdopEntry{
 		bindingPower: P_UNEXPECTED,
@@ -543,6 +536,8 @@ func infix(bindingPower int) tdopEntry {
 	}
 }
 
+// rinfix for infix operators that eval from right to left instead of left to
+// right. (e.g. assignment)
 func rinfix(bindingPower int) tdopEntry {
 	return tdopEntry{
 		bindingPower: bindingPower,
@@ -561,6 +556,8 @@ func rinfix(bindingPower int) tdopEntry {
 	}
 }
 
+// infixOrNaught for an operator (";") which may or may not have something
+// following.
 func infixOrNaught(bindingPower int) tdopEntry {
 	return tdopEntry{
 		bindingPower: bindingPower,
@@ -629,10 +626,6 @@ func (n *Node) nud() nudFunc {
 
 func (n *Node) led() ledFunc {
 	return tdopRegistry[n.Token()].led
-}
-
-func (n *Node) std() stdFunc {
-	return tdopRegistry[n.Token()].std
 }
 
 func (n *Node) bind() int {
