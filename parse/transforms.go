@@ -2,6 +2,23 @@ package parse
 
 import "github.com/pdk/gosh/token"
 
+// applyTransforms does some post-part, pre-eval transformations to "clean
+// things up a bit".
+func (n *Node) applyTransforms() *Node {
+
+	n = n.transformFuncApply()
+	n = n.raiseSingleTuples()
+
+	for i, c := range n.children {
+		n.children[i] = c.applyTransforms()
+	}
+
+	n = n.transformReturnComma()
+	n = n.transformSemiTreeToList()
+
+	return n
+}
+
 // transformFuncApply checks if the node is a function/method invocation, and
 // rewrites as either FUNCAPPLY/f-apply or METHAPPLY/m-apply.
 func (n *Node) transformFuncApply() *Node {
@@ -34,6 +51,8 @@ func (n *Node) transformFuncApply() *Node {
 	return n
 }
 
+// raiseSingleTuples
+// ("(" x) ==> x
 func (n *Node) raiseSingleTuples() *Node {
 
 	if n.Token() != token.LPAREN || len(n.children) != 1 {
@@ -72,28 +91,15 @@ func (n *Node) transformSemiTreeToList() *Node {
 	return n
 }
 
-// func (n *Node) transformCommaTreeToList() *Node {
+// transformReturnComma fix return with a single comma child
+// (return (, ...)) ==> (return ...)
+func (n *Node) transformReturnComma() *Node {
 
-// 	if n.Token() == token.COMMA && n.firstChild() != nil && n.firstChild().Token() == token.COMMA {
-// 		return n.raiseFirstChildren()
-// 	}
+	if n.Token() == token.RETURN && n.firstChild() != nil &&
+		(n.firstChild().Token() == token.COMMA || n.firstChild().Token() == token.LPAREN) {
 
-// 	return n
-// }
-
-// applyTransforms does some post-part, pre-eval transformations to "clean
-// things up a bit".
-func (n *Node) applyTransforms() *Node {
-
-	n = n.transformFuncApply()
-	n = n.raiseSingleTuples()
-
-	for i, c := range n.children {
-		n.children[i] = c.applyTransforms()
+		return n.raiseFirstChildren()
 	}
-
-	n = n.transformSemiTreeToList()
-	// n = n.transformCommaTreeToList()
 
 	return n
 }

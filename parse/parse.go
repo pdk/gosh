@@ -165,60 +165,20 @@ const (
 
 	P_PIPE
 	P_ASSIGN
+	P_RETURN
 	P_COMMA
 	P_LOGIC
-	P_RETURN
 	P_COMPARE
 	P_PLUSMINUS
 	P_MULTDIV
 	P_PREFIX
+	P_BRACKET
 	P_CONTROL
-	P_FUNC
 	P_PERIOD
 )
 
 func init() {
 	tdopRegistry[token.ILLEGAL] = tdopEntry{}
-
-	tdopRegistry[token.PERIOD] = infix(P_PERIOD)
-
-	tdopRegistry[token.NOT] = prefix(P_PREFIX)
-
-	tdopRegistry[token.MULT] = infix(P_MULTDIV)
-	tdopRegistry[token.DIV] = infix(P_MULTDIV)
-	tdopRegistry[token.MODULO] = infix(P_MULTDIV)
-
-	tdopRegistry[token.PLUS] = infix(P_PLUSMINUS)
-	tdopRegistry[token.MINUS] = prefixInfix(P_PREFIX, P_PLUSMINUS)
-
-	tdopRegistry[token.EQUAL] = infix(P_COMPARE)
-	tdopRegistry[token.LESS] = infix(P_COMPARE)
-	tdopRegistry[token.GRTR] = infix(P_COMPARE)
-	tdopRegistry[token.NOT_EQUAL] = infix(P_COMPARE)
-	tdopRegistry[token.LESS_EQUAL] = infix(P_COMPARE)
-	tdopRegistry[token.GRTR_EQUAL] = infix(P_COMPARE)
-	tdopRegistry[token.ISA] = infix(P_COMPARE)
-	tdopRegistry[token.HASA] = infix(P_COMPARE)
-
-	tdopRegistry[token.COMMA] = infix(P_COMMA)
-
-	tdopRegistry[token.RETURN] = prefixOrNaught(P_RETURN)
-
-	tdopRegistry[token.LOG_AND] = infix(P_LOGIC)
-	tdopRegistry[token.LOG_OR] = infix(P_LOGIC)
-
-	tdopRegistry[token.BREAK] = self()
-	tdopRegistry[token.CONTINUE] = self()
-
-	tdopRegistry[token.ASSIGN] = rinfix(P_ASSIGN)
-	tdopRegistry[token.ACCUM] = rinfix(P_ASSIGN)
-	tdopRegistry[token.QASSIGN] = rinfix(P_ASSIGN)
-
-	tdopRegistry[token.LPIPE] = infix(P_PIPE)
-	tdopRegistry[token.RPIPE] = rinfix(P_PIPE)
-
-	tdopRegistry[token.EOF] = eof(P_EOF)
-	tdopRegistry[token.COMMENT] = consumable()
 
 	tdopRegistry[token.IDENT] = self()
 	tdopRegistry[token.INT] = self()
@@ -228,74 +188,90 @@ func init() {
 	tdopRegistry[token.NIL] = self()
 	tdopRegistry[token.TRUE] = self()
 	tdopRegistry[token.FALSE] = self()
+	tdopRegistry[token.BREAK] = self()
+	tdopRegistry[token.CONTINUE] = self()
+
+	tdopRegistry[token.PKG] = prefix(P_PREFIX)
+	tdopRegistry[token.NOT] = prefix(P_PREFIX)
+
+	tdopRegistry[token.MINUS] = prefixInfix(P_PREFIX, P_PLUSMINUS)
+	tdopRegistry[token.RETURN] = prefixOrNaught(P_RETURN)
+
+	tdopRegistry[token.PERIOD] = infix(P_PERIOD)
+	tdopRegistry[token.MULT] = infix(P_MULTDIV)
+	tdopRegistry[token.DIV] = infix(P_MULTDIV)
+	tdopRegistry[token.MODULO] = infix(P_MULTDIV)
+	tdopRegistry[token.PLUS] = infix(P_PLUSMINUS)
+	tdopRegistry[token.EQUAL] = infix(P_COMPARE)
+	tdopRegistry[token.LESS] = infix(P_COMPARE)
+	tdopRegistry[token.GRTR] = infix(P_COMPARE)
+	tdopRegistry[token.NOT_EQUAL] = infix(P_COMPARE)
+	tdopRegistry[token.LESS_EQUAL] = infix(P_COMPARE)
+	tdopRegistry[token.GRTR_EQUAL] = infix(P_COMPARE)
+	tdopRegistry[token.ISA] = infix(P_COMPARE)
+	tdopRegistry[token.HASA] = infix(P_COMPARE)
+	tdopRegistry[token.COMMA] = infix(P_COMMA)
+	tdopRegistry[token.LOG_AND] = infix(P_LOGIC)
+	tdopRegistry[token.LOG_OR] = infix(P_LOGIC)
+	tdopRegistry[token.LPIPE] = infix(P_PIPE)
 
 	tdopRegistry[token.SEMI] = infixOrNaught(P_SEPARATOR)
 
-	tdopRegistry[token.LPAREN] = leftBracket(P_FUNC, token.RPAREN)
-	tdopRegistry[token.LSQR] = leftBracket(P_FUNC, token.RSQR)
-	tdopRegistry[token.LBRACE] = tdopEntry{}
+	tdopRegistry[token.RPIPE] = rinfix(P_PIPE)
+	tdopRegistry[token.ASSIGN] = rinfix(P_ASSIGN)
+	tdopRegistry[token.ACCUM] = rinfix(P_ASSIGN)
+	tdopRegistry[token.QASSIGN] = rinfix(P_ASSIGN)
 
-	tdopRegistry[token.RPAREN] = tdopEntry{} // unbalanced()
-	tdopRegistry[token.RSQR] = tdopEntry{}   // unbalanced()
-	tdopRegistry[token.RBRACE] = tdopEntry{} // unbalanced()
+	tdopRegistry[token.LPAREN] = leftBracket(P_BRACKET, token.RPAREN)
+	tdopRegistry[token.LSQR] = leftBracket(P_BRACKET, token.RSQR)
 
-	tdopRegistry[token.COLON] = tdopEntry{}
-	tdopRegistry[token.DOLLAR] = tdopEntry{}
-	tdopRegistry[token.DDOLLAR] = tdopEntry{}
-
-	tdopRegistry[token.ELSE] = tdopEntry{}
-	tdopRegistry[token.FOR] = tdopEntry{}
-	tdopRegistry[token.IN] = tdopEntry{}
-	tdopRegistry[token.FUNC] = tdopEntry{}
+	tdopRegistry[token.WHILE] = whileExpr(P_CONTROL)
+	tdopRegistry[token.FUNC] = funcExpr(P_CONTROL)
 	tdopRegistry[token.IF] = ifExpr(P_CONTROL)
-	tdopRegistry[token.IMPORT] = tdopEntry{}
-	tdopRegistry[token.PKG] = prefix(P_PREFIX)
-	tdopRegistry[token.STRUCT] = tdopEntry{}
-	tdopRegistry[token.SWITCH] = tdopEntry{}
-	tdopRegistry[token.WHILE] = tdopEntry{}
-	tdopRegistry[token.ENUM] = tdopEntry{}
-	tdopRegistry[token.SYS] = tdopEntry{}
+
+	// TODO
+	tdopRegistry[token.COLON] = tdopEntry{}   // named parameters on function invocation
+	tdopRegistry[token.DOLLAR] = tdopEntry{}  // execute system command, return pipe
+	tdopRegistry[token.DDOLLAR] = tdopEntry{} // execute bash command, return pipe
+	tdopRegistry[token.FOR] = tdopEntry{}     // pipe consumption loop
+	tdopRegistry[token.IMPORT] = tdopEntry{}  // load another file
+	tdopRegistry[token.STRUCT] = tdopEntry{}  // define a compound type
+	tdopRegistry[token.SWITCH] = tdopEntry{}  // multibranch conditional
+	tdopRegistry[token.ENUM] = tdopEntry{}    // define an enumeration
+	tdopRegistry[token.SYS] = tdopEntry{}     // synonym for $, $$, but take expression
 }
 
-func eof(bp int) tdopEntry {
-	return tdopEntry{
-		bindingPower: bp,
-		nud: func(node *Node, p *Parser) (*Node, error) {
-			return node, nil
-		},
-	}
-}
-func consumable() tdopEntry {
-	return tdopEntry{
-		bindingPower: 0,
-	}
-}
-
+// newNode makes a parse.Node out of a lexeme.
 func newNode(lex *lexer.Lexeme) *Node {
 	return &Node{
 		lexeme: lex,
 	}
 }
 
+// lefty sets a node to be a lefty.
 func (n *Node) lefty() *Node {
 	n.arity = Lefty
 	return n
 }
 
+// righty sets a node to be a righty.
 func (n *Node) righty() *Node {
 	n.arity = Righty
 	return n
 }
 
+// IsLefty returns true IFF the node has arity Lefty.
 func (n *Node) IsLefty() bool {
 	return n.arity == Lefty
 }
 
+// IsRighty returns true IFF the node has arity Righty.
 func (n *Node) IsRighty() bool {
 	return n.arity == Righty
 
 }
 
+// bindPowerOf looks up the binding power in the registry.
 func bindPowerOf(lex *lexer.Lexeme) int {
 	return tdopRegistry[lex.Token()].bindingPower
 }
@@ -358,6 +334,75 @@ func ifExpr(bp int) tdopEntry {
 	}
 }
 
+// whileExpr parses a while expression. This is probably the simplest control
+// structure, syntactically.
+// while ... { ... }
+func whileExpr(bp int) tdopEntry {
+	return tdopEntry{
+		bindingPower: bp,
+		nud: func(node *Node, p *Parser) (*Node, error) {
+
+			exp, err := p.expression(0)
+			node.children = append(node.children, exp)
+			if err != nil {
+				return node, err
+			}
+
+			// Use standard block parser to add function body.
+			return parseBlockToChild(node, p)
+		},
+	}
+}
+
+// funcExpr parses a function definition, which are of these forms:
+// func(...) {...}
+// func(...) [...] {...}
+// That is, keyword `func` followed by param list in parens,
+// optionally a list of output channel names, and then the body of
+// the function in curly braces.
+func funcExpr(bp int) tdopEntry {
+	return tdopEntry{
+		bindingPower: bp,
+		nud: func(node *Node, p *Parser) (*Node, error) {
+
+			paramNode, err := p.advance(token.LPAREN)
+			if err != nil {
+				return node, err
+			}
+
+			paramNode, err = parseCommaListUntil(paramNode, p, token.RPAREN)
+			node.children = append(node.children, paramNode)
+			if err != nil {
+				return node, err
+			}
+
+			if p.peekIs(token.LSQR) {
+				channelNode, err := p.advance(token.LSQR)
+				if err != nil {
+					return node, err
+				}
+
+				channelNode, err = parseCommaListUntil(channelNode, p, token.RSQR)
+				node.children = append(node.children, channelNode)
+				if err != nil {
+					return node, err
+				}
+			} else {
+				// Make sure there is an empty channel list as child position 2,
+				// even if no channels were named.
+				xeme := lexer.NewLexeme(token.LSQR, "[")
+				channelNode := newNode(&xeme)
+				node.children = append(node.children, channelNode)
+			}
+
+			// Use standard block parser to add function body.
+			return parseBlockToChild(node, p)
+		},
+	}
+}
+
+// parseBlockToChild is used for various command structures that expect a
+// brace-bounded collection of statements. Used for if, for, while, func, ...
 func parseBlockToChild(node *Node, p *Parser) (*Node, error) {
 
 	_, err := p.advance(token.LBRACE)
@@ -384,53 +429,6 @@ func parseBlockToChild(node *Node, p *Parser) (*Node, error) {
 	return node, err
 }
 
-func leftBrace(bindPower int) tdopEntry {
-	return tdopEntry{
-		bindingPower: bindPower,
-		nud: func(node *Node, p *Parser) (*Node, error) {
-
-			n, err := p.expression(P_UNEXPECTED)
-			if err != nil {
-				return n, err
-			}
-
-			_, err = p.advance(token.RBRACE)
-			return n, err
-		},
-		led: func(node *Node, p *Parser, left *Node) (*Node, error) {
-
-			node.children = append(node.children, left)
-			if !p.peekIs(token.RBRACE) {
-
-				exp, err := p.expression(P_UNEXPECTED)
-				// exp, err := p.expression(P_SEPARATOR)
-				if err != nil {
-					return node, err
-				}
-
-				node.children = append(node.children, exp)
-
-				for p.peekIs(token.SEMI) {
-					_, err := p.advance(token.SEMI)
-					if err != nil {
-						return node, err
-					}
-
-					exp, err := p.expression(P_SEPARATOR)
-					if err != nil {
-						return node, err
-					}
-
-					node.children = append(node.children, exp)
-				}
-			}
-
-			_, err := p.advance(token.RBRACE)
-			return node, err
-		},
-	}
-}
-
 func parseCommaListUntil(node *Node, p *Parser, rightBracket token.Token) (*Node, error) {
 	for {
 		if p.peekIs(rightBracket) {
@@ -453,6 +451,12 @@ func parseCommaListUntil(node *Node, p *Parser, rightBracket token.Token) (*Node
 	}
 }
 
+// leftBracket is used for both left parenthesis and left square bracket. Both
+// of thsee may be infix or prefix operators.
+// a[x] map/list lookup
+// [a] a list
+// (a,b) a pair of values
+// f() invoking a function
 func leftBracket(bindPower int, rightBracket token.Token) tdopEntry {
 	return tdopEntry{
 		bindingPower: bindPower,
@@ -465,12 +469,6 @@ func leftBracket(bindPower int, rightBracket token.Token) tdopEntry {
 		},
 	}
 }
-
-// func unbalanced() tdopEntry {
-// 	return tdopEntry{
-// 		bindingPower: P_UNEXPECTED,
-// 	}
-// }
 
 func prefix(rightBP int) tdopEntry {
 	return tdopEntry{
@@ -507,6 +505,7 @@ func prefixOrNaught(rightBP int) tdopEntry {
 	}
 }
 
+// infix: basic left-to-right binary operators.
 func infix(bindingPower int) tdopEntry {
 	return tdopEntry{
 		bindingPower: bindingPower,
@@ -617,15 +616,14 @@ func (n *Node) led() ledFunc {
 	return tdopRegistry[n.Token()].led
 }
 
-func (n *Node) bind() int {
-	return tdopRegistry[n.Token()].bindingPower
-}
-
 func parseError(at *Node, mesg string) error {
 	return fmt.Errorf("parse error on line %d, pos %d, token %s: %s",
 		at.lexeme.LineNo(), at.lexeme.CharNo(), at.lexeme.Literal(), mesg)
 }
 
+// expression is the magical driver of the top down operator precedence parser.
+// this is the beating heart of the parser.
+// see https://www.youtube.com/watch?v=Nlqv6NtBXcA
 func (p *Parser) expression(rbp int) (*Node, error) {
 
 	var err error
@@ -661,6 +659,8 @@ func (p *Parser) expression(rbp int) (*Node, error) {
 	return left, nil
 }
 
+// advance asserts that the next token is a particular token, and consumes it,
+// return the parse node thus created.
 func (p *Parser) advance(match token.Token) (*Node, error) {
 
 	next := newNode(p.next())

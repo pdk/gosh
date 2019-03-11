@@ -34,6 +34,51 @@ func TestLogics(t *testing.T) {
 
 	checkSexpr(t, "!true", "(! true)", "not")
 	checkSexpr(t, "1+-2", "(+ 1 (- 2))", "prefix/infix")
+
+	checkSexpr(t, "true && return 42", `(&& true (return 42))`, "and return 42")
+	checkSexpr(t, "err == nil && return err", `(&& (== err nil) (return err))`, "and return err")
+
+	checkSexpr(t, "true || return 42", `(|| true (return 42))`, "and return 42")
+	checkSexpr(t, "err == nil || return err", `(|| (== err nil) (return err))`, "and return err")
+
+	checkSexpr(t, `err == nil && "dandy" || "not good"`, `(|| (&& (== err nil) dandy) "not good")`, "and+or")
+	checkSexpr(t, `return (err == nil && "dandy" || "not good")`, `(return (|| (&& (== err nil) dandy) "not good"))`, "return and+or")
+
+}
+
+func TestReturn(t *testing.T) {
+
+	checkSexpr(t, "return nil", "(return nil)", "return nil")
+	checkSexpr(t, "return", "return", "bare return")
+	checkSexpr(t, "return a+b", "(return (+ a b))", "return w/expr")
+	checkSexpr(t, "return aleph(23/4)", "(return (f-apply aleph (/ 23 4)))", "return func")
+
+	checkSexpr(t, "return 1,2", `(return 1 2)`, "two-val return")
+	checkSexpr(t, "return (1,2)", `(return 1 2)`, "two-val return")
+	checkSexpr(t, "return true || false", `(return (|| true false))`, "return or")
+
+	// confusing expression will always return "dandy"
+	checkSexpr(t, `err == nil && return "dandy" || return "failure"`,
+		`(&& (== err nil) (return (|| dandy (return failure))))`, "and return or return")
+
+	// this does the expected thing
+	checkSexpr(t, `return err == nil && "dandy" || "failure"`,
+		`(return (|| (&& (== err nil) dandy) failure))`, "return and or")
+
+	checkSexpr(t, `return err, err == nil && "dandy" || "failure"`,
+		`(return err (|| (&& (== err nil) dandy) failure))`, "return err, and or")
+
+	checkSexpr(t, `return (err, err == nil && "dandy" || "failure")`,
+		`(return err (|| (&& (== err nil) dandy) failure))`, "return paren err, and or")
+}
+
+func TestIsa(t *testing.T) {
+
+	checkSexpr(t, `if x isa grape { return true }`, `(if (isa x grape) (return true))`, "isa grape")
+	checkSexpr(t, `if x hasa grape { return true }`, `(if (hasa x grape) (return true))`, "isa grape")
+
+	checkSexpr(t, `if x.f(23)+5 isa g("x") { return true }`,
+		`(if (isa (+ (m-apply x f 23) 5) (f-apply g x)) (return true))`, "isa grape")
 }
 
 func TestDot(t *testing.T) {
@@ -160,6 +205,9 @@ func TestIf(t *testing.T) {
 		# expression.`,
 		`(:= v (if (== a b) (stmts (f-apply f 1) (f-apply g 12) "first branch") (> b c) (stmts (f-apply blip) (m-apply biff glop 23 arf) "second branch") (stmts (:= a 23) (+ (m-apply bo go) 1) "third branch")))`,
 		"big if")
+
+	checkParseErr(t, `if true {} else 1+2`, "expecting either { or if")
+	checkParseErr(t, `if true return`, "expecting LBRACE")
 }
 
 func TestEmbedIf(t *testing.T) {
@@ -175,6 +223,16 @@ func TestMultilineIf(t *testing.T) {
 	checkSexpr(t, "if p {a;b;c} else {d;e;f}", "(if p (stmts a b c) (stmts d e f))", "multi-stmt if-else")
 	checkSexpr(t, "if p {a;b;c} else if q {;d;e;f;} else if r {} else {g()}",
 		"(if p (stmts a b c) q (stmts d e f) r stmts (f-apply g))", "complex multi-branch if")
+}
+
+func TestAssign(t *testing.T) {
+
+	checkSexpr(t, "a := 1", `(:= a 1)`, "basic assign 1")
+	checkSexpr(t, "a := 1+2", `(:= a (+ 1 2))`, "basic assign 2")
+	checkSexpr(t, "a := a && b || c", `(:= a (|| (&& a b) c))`, "assign logic")
+
+	checkSexpr(t, "a ?= 1", `(?= a 1)`, "if-nil assign")
+	checkSexpr(t, "a += 1", `(+= a 1)`, "accum assign")
 }
 
 func TestArity(t *testing.T) {
@@ -197,14 +255,6 @@ func TestArity(t *testing.T) {
 
 }
 
-func TestReturn(t *testing.T) {
-
-	checkSexpr(t, "return nil", "(return nil)", "return nil")
-	checkSexpr(t, "return", "return", "bare return")
-	checkSexpr(t, "return a+b", "(return (+ a b))", "return w/expr")
-	checkSexpr(t, "return aleph(23/4)", "(return (f-apply aleph (/ 23 4)))", "return func")
-}
-
 func TestSquareBracket(t *testing.T) {
 
 	checkSexpr(t, "()", `"("`, "empty list")
@@ -223,9 +273,71 @@ func TestSquareBracket(t *testing.T) {
 	checkSexpr(t, "[a]", `([ a)`, "list of a")
 }
 
+func TestFunc(t *testing.T) {
+
+	checkSexpr(t, `func(a,b){return a,b}`, `(func ("(" a b) [ (return a b))`, "ab func")
+	checkSexpr(t, `func(a,b) [i,j] {return a,b}`, `(func ("(" a b) ([ i j) (return a b))`, "ab ij func")
+	checkSexpr(t, `func(){return 1+2}`, `(func "(" [ (return (+ 1 2)))`, "no arg func")
+	checkSexpr(t, `func(){}`, `(func "(" [ stmts)`, "no arg, empty")
+	checkSexpr(t, `func()[]{}`, `(func "(" [ stmts)`, "no arg, empty")
+
+	checkParseErr(t, "func{}", "expecting LPAREN")
+	checkParseErr(t, "func()", "expecting LBRACE")
+	checkParseErr(t, "func foo()", "expecting LPAREN")
+
+	checkSexpr(t, "f := func(a) {\nreturn a+1\n}",
+		`(:= f (func a [ (return (+ a 1))))`, "assign func")
+
+	checkSexpr(t, "f := func(a) {\nreturn a+1\n}(33)",
+		`(:= f (f-apply (func a [ (return (+ a 1))) 33))`, "assign func")
+
+	checkSexpr(t, "i, j := func(a) {\nreturn a+1,a-1\n}(33)",
+		`(:= (, i j) (f-apply (func a [ (return (+ a 1) (- a 1))) 33))`, "assign func")
+
+	checkSexpr(t, "i, j := func(a) {\nreturn (a+1,a-1)\n}(33)",
+		`(:= (, i j) (f-apply (func a [ (return (+ a 1) (- a 1))) 33))`, "assign func")
+
+	checkSexpr(t, "1 + func(){return 3}()",
+		`(+ 1 (f-apply (func "(" [ (return 3))))`, "1 + func applied")
+
+	// This will cause a runtime error: can't add a function to an integer, but
+	// syntactically valid.
+	checkSexpr(t, "1 + func(){return 3}",
+		`(+ 1 (func "(" [ (return 3)))`, "1 + func")
+}
+
+func TestWhile(t *testing.T) {
+
+	checkSexpr(t, "while true {}", `(while true stmts)`, `1 infinite lp`)
+
+	checkSexpr(t, "while a > b && c != d || !e {}",
+		`(while (|| (&& (> a b) (!= c d)) (! e)) stmts)`, `while w/logic`)
+
+	checkSexpr(t, `while true { while a+b<10 { if x==3 { return 27 } else { while i-j>0 { return "ack"}}}}`,
+		`(while true (while (< (+ a b) 10) (if (== x 3) (return 27) (while (> (- i j) 0) (return ack)))))`,
+		`while complicated`)
+
+	checkParseErr(t, `while true if`, "token if: unexpected token")
+
+	checkSexpr(t, `while if true {false} {}`, `(while (if true false) stmts)`, "stmt as expr")
+}
+
 //
 // Helpers below
 //
+
+func checkParseErr(t *testing.T, input, matchErr string) {
+
+	_, err := parseInput(input)
+	if err == nil {
+		t.Errorf("expected error with \"%s\", but got nil", matchErr)
+		return
+	}
+
+	if !strings.Contains(err.Error(), matchErr) {
+		t.Errorf("expected error with \"%s\", but got %s", matchErr, err)
+	}
+}
 
 func checkSexpr(t *testing.T, input, expected, preface string) {
 

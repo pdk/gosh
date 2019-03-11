@@ -300,6 +300,16 @@ If a is 1, then x will get "one", otherwise "something else".
     err == nil && return "meh", err
     err != nil || return "meg", err
 
+Note that the following will not do what you expect:
+
+    err == nil && return "dandy" || return "failure"    ## wrong!!
+
+While this will:
+
+    return err == nil && "dandy" || "failure"
+
+Just remember: don't put more than one `return` in an expression.
+
 ## math
 
 Standard numerical operators:
