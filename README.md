@@ -227,8 +227,8 @@ where `false` and `nil` are not equal.
 
 The function `bool` can be used to convert some types to an actual `bool`. For
 numbers, 0 (zero) is false, anything else is true. For strings, if the value is
-"true" or "t", then it's `true`; for "" (empty string), it's `nil`; otherwise
-it's `false`.
+"true" or "t", then it's `true`; for "" (empty string) or "nil", it's `nil`;
+otherwise it's `false`.
 
     bool(1)             # true
     bool(0)             # false
@@ -248,7 +248,10 @@ Boolean operators
 
     expr1 && expr2
 
-If the value of `expr1` is a `bool` and it is `true`, then `expr2` will be evaluated, and its value will be the value of the whole expression. If `expr1` is not a `bool`, or its value is not `true`, then the value of the expression is the value of `expr1` (usually `false`).
+If the value of `expr1` is a `bool` and it is `true`, then `expr2` will be
+evaluated, and its value will be the value of the whole expression. If `expr1`
+is not a `bool`, or its value is not `true`, then the value of the expression is
+the value of `expr1` (usually `false`).
 
     true && 42      # 42
     false && 42     # false
@@ -258,10 +261,35 @@ If the value of `expr1` is a `bool` and it is `true`, then `expr2` will be evalu
 ### Logical OR ||
 
     expr1 || expr2
+    true || false       # true
+    false || true       # true
+    true || 42          # true
+    false || 42         # 42
+    42 || true          # 42 (42 is not false)
+    42 || false         # 42
+    "false" || true     # "false" ("false" is not false)
 
-If `expr1` is a `bool` and its value is `true`, then the value of the whole expression is `true`, and `expr2` will not be evaluated. If `expr1` is not a `bool` or its value is not `true`, then `expr2` will be evaluated and its value will be the value of the entire expression.
+If `expr1` is a bool and it's value is `false`/`nil`, then `expr2` will be
+evaluated, and be the value of the expression. If `expr1` is not a bool or if
+it's value is `true`, then the value of the expression will be the value of
+`expr1` and `expr2 will not be evaluate.
 
 ### &&/|| expressions
+
+Precedence for `&&` and `||` is the same, and they are evaluated left-to-right.
+
+    p && q || r     # ((p && q) || r)
+    p || q && r     # ((p || q) && r)
+
+    true && "aa" || "bb"       # "aa"
+    false && "aa" || "bb"      # "bb"
+    true && ("aa" || "bb")     # "aa"
+    false && ("aa" || "bb")    # false
+    true || "aa" && "bb"       # "bb"
+    false || "aa" && "bb"      # false
+
+    "yes" && true       # "yes"
+    "no" || true        # "no"
 
     x := a == 1 && "one" || "something else"
 

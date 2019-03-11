@@ -26,7 +26,10 @@ func TestSimpleExpr(t *testing.T) {
 
 func TestLogics(t *testing.T) {
 
-	checkSexpr(t, "x := a == b && \"yes\" || \"no\"", "(:= x (|| (&& (== a b) yes) no))", "and/or")
+	checkSexpr(t, `x := a == 1 && "one" || "something else"`,
+		`(:= x (|| (&& (== a 1) one) "something else"))`, "alternatives")
+
+	checkSexpr(t, `x := a == b && "yes" || "no"`, "(:= x (|| (&& (== a b) yes) no))", "and/or")
 	checkSexpr(t, "x := a == b && (c > d || e != 5)", "(:= x (&& (== a b) (|| (> c d) (!= e 5))))", "and/or")
 
 	checkSexpr(t, "!true", "(! true)", "not")
@@ -100,7 +103,8 @@ func TestIf(t *testing.T) {
 			x:=true
 		} else if a<b {
 			x := false
-		}`, "(if true (:= x true) (< a b) (:= x false))", "if-else-if")
+		}`,
+		"(if true (:= x true) (< a b) (:= x false))", "if-else-if")
 	checkSexpr(t, `
 		if true {
 			x:=true
@@ -111,7 +115,9 @@ func TestIf(t *testing.T) {
 			y := "fred"
 		} else {
 			dotThat()
-		}`, "(if true (:= x true) (< a b) (:= x false) (! true) (stmts (f-apply f (f-apply g x)) (:= y fred)) (f-apply dotThat))", "if-else-if")
+		}`,
+		"(if true (:= x true) (< a b) (:= x false) (! true) (stmts (f-apply f (f-apply g x)) (:= y fred)) (f-apply dotThat))",
+		"if-else-if")
 	checkSexpr(t, `
 		if true {
 			x:=true
@@ -126,7 +132,34 @@ func TestIf(t *testing.T) {
 		} else {
 			dotThat()
 			# i wonder
-		}`, "(if true (:= x true) (< a b) (:= x false) (! true) (stmts (f-apply f (f-apply g x)) (:= y fred)) (f-apply dotThat))", "if-else-if + comments")
+		}`,
+		"(if true (:= x true) (< a b) (:= x false) (! true) (stmts (f-apply f (f-apply g x)) (:= y fred)) (f-apply dotThat))",
+		"if-else-if + comments")
+
+	checkSexpr(t, `
+		v := if a == b {
+			f(1)
+			#
+			g(12)
+			"first branch"
+		} else if (b>c ){
+			blip()
+			biff.glop(23, "arf")
+			"second branch"
+		} else {
+			# oink
+			a := 23 # ack
+
+			# bo
+			bo.go()+1
+			"third branch"
+		}
+
+		# the value of v will be either "first branch", "second branch" or "third
+		# branch" as the value of the if expression is the value of the last evaluated
+		# expression.`,
+		`(:= v (if (== a b) (stmts (f-apply f 1) (f-apply g 12) "first branch") (> b c) (stmts (f-apply blip) (m-apply biff glop 23 arf) "second branch") (stmts (:= a 23) (+ (m-apply bo go) 1) "third branch")))`,
+		"big if")
 }
 
 func TestEmbedIf(t *testing.T) {
@@ -142,6 +175,52 @@ func TestMultilineIf(t *testing.T) {
 	checkSexpr(t, "if p {a;b;c} else {d;e;f}", "(if p (stmts a b c) (stmts d e f))", "multi-stmt if-else")
 	checkSexpr(t, "if p {a;b;c} else if q {;d;e;f;} else if r {} else {g()}",
 		"(if p (stmts a b c) q (stmts d e f) r stmts (f-apply g))", "complex multi-branch if")
+}
+
+func TestArity(t *testing.T) {
+
+	checkLefty(t, "1+2")
+	checkRighty(t, "-1")
+	checkLefty(t, "1-2")
+	checkLefty(t, "f()")
+	checkLefty(t, "f(1,2)")
+
+	checkSexpr(t, "(1,2)", `("(" 1 2)`, "tuple")
+	checkRighty(t, "(1,2)")
+
+	checkSexpr(t, "(1,2,3,4)", `("(" 1 2 3 4)`, "fourple")
+	checkRighty(t, "(1,2,3,4)")
+	checkSexpr(t, "asdf(1,2,3,4)", `(f-apply asdf 1 2 3 4)`, "fourple")
+	checkLefty(t, "asdf(1,2,3,4)")
+	checkSexpr(t, "as.df(1,2,3,4)", `(m-apply as df 1 2 3 4)`, "fourple")
+	checkLefty(t, "as.df(1,2,3,4)")
+
+}
+
+func TestReturn(t *testing.T) {
+
+	checkSexpr(t, "return nil", "(return nil)", "return nil")
+	checkSexpr(t, "return", "return", "bare return")
+	checkSexpr(t, "return a+b", "(return (+ a b))", "return w/expr")
+	checkSexpr(t, "return aleph(23/4)", "(return (f-apply aleph (/ 23 4)))", "return func")
+}
+
+func TestSquareBracket(t *testing.T) {
+
+	checkSexpr(t, "()", `"("`, "empty list")
+	checkSexpr(t, "[]", `[`, "empty list")
+	checkSexpr(t, "f()", `(f-apply f)`, "empty list")
+
+	checkSexpr(t, "a[]", `([ a)`, "empty list")
+	checkLefty(t, "a[]")
+	checkRighty(t, "[a]")
+	checkLefty(t, "a[b,c]")
+	checkRighty(t, "[a,b,c]")
+
+	checkSexpr(t, "a[b,c]", `([ a b c)`, "lefty bracket 3 item")
+	checkSexpr(t, "[a,b,c]", `([ a b c)`, "righty bracket 3 item")
+
+	checkSexpr(t, "[a]", `([ a)`, "list of a")
 }
 
 //
@@ -169,4 +248,30 @@ func parseInput(input string) (*parse.Node, error) {
 	parser := parse.New(lxr)
 
 	return parser.Parse()
+}
+
+func checkLefty(t *testing.T, input string) {
+
+	r, err := parseInput(input)
+	if err != nil {
+		t.Errorf("unexpected error: %s", err)
+		return
+	}
+
+	if !r.IsLefty() {
+		t.Errorf("expected %s to be Lefty, but it's not", input)
+	}
+}
+
+func checkRighty(t *testing.T, input string) {
+
+	r, err := parseInput(input)
+	if err != nil {
+		t.Errorf("unexpected error: %s", err)
+		return
+	}
+
+	if !r.IsRighty() {
+		t.Errorf("expected %s to be Righty, but it's not", input)
+	}
 }

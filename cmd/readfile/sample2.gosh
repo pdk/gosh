@@ -1,15 +1,21 @@
-if a == b {
+v := if a == b {
     f(1)
     #
     g(12)
+    "first branch"
 } else if b>c {
     blip()
     biff.glop(23, "arf")
+    "second branch"
 } else {
     # oink
     a := 23 # ack
 
     # bo
     bo.go()+1
-
+    "third branch"
 }
+
+# the value of v will be either "first branch", "second branch" or "third
+# branch" as the value of the if expression is the value of the last evaluated
+# expression.

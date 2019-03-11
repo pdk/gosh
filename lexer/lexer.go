@@ -123,6 +123,15 @@ func (lex Lexeme) WithLiteral(lit string) Lexeme {
 	return lex
 }
 
+// Rewrite creates a new Lexeme based on an existing Lexeme.
+func (lex Lexeme) Rewrite(tok token.Token, lit string) *Lexeme {
+
+	lex.token = tok
+	lex.literal = lit
+
+	return &lex
+}
+
 // at sets a Lexeme's location
 func (lex Lexeme) at(lineNo, charNo int) Lexeme {
 
