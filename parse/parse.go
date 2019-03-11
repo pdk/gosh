@@ -46,7 +46,17 @@ func (p *Parser) next() *lexer.Lexeme {
 
 // pToken returns the token of the peek.
 func (p *Parser) peekIs(tok token.Token) bool {
-	return p.lexer.Peek().Token() == tok
+
+	if p == nil || p.lexer == nil {
+		return false
+	}
+
+	l := p.lexer.Peek()
+	if l == nil {
+		return false
+	}
+
+	return l.Token() == tok
 }
 
 // Arity designates if a node is Lefty/Righty
@@ -78,6 +88,9 @@ func (n *Node) Literal() string {
 
 // Token returns the token of the lexeme of the node.
 func (n *Node) Token() token.Token {
+	if n.lexeme == nil {
+		return token.NADA
+	}
 	return n.lexeme.Token()
 }
 
@@ -617,6 +630,10 @@ func (n *Node) led() ledFunc {
 }
 
 func parseError(at *Node, mesg string) error {
+	if at == nil || at.lexeme == nil {
+		return fmt.Errorf("parse error: %s", mesg)
+	}
+
 	return fmt.Errorf("parse error on line %d, pos %d, token %s: %s",
 		at.lexeme.LineNo(), at.lexeme.CharNo(), at.lexeme.Literal(), mesg)
 }
@@ -663,7 +680,12 @@ func (p *Parser) expression(rbp int) (*Node, error) {
 // return the parse node thus created.
 func (p *Parser) advance(match token.Token) (*Node, error) {
 
-	next := newNode(p.next())
+	l := p.next()
+	if l == nil {
+		return nil, parseError(nil, "ran out of input: no more tokens")
+	}
+
+	next := newNode(l)
 
 	if next.Token() != match {
 		return next, parseError(next, fmt.Sprintf("expecting %s", match.String()))

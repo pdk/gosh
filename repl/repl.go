@@ -1,26 +1,55 @@
 package repl
 
 import (
+	"bufio"
+	"fmt"
 	"io"
+	"log"
+
+	"github.com/pdk/gosh/lexer"
+	"github.com/pdk/gosh/parse"
 )
 
-const PROMPT = ">> "
+// Prompt is show when waiting for input.
+var Prompt = ">>> "
 
-func Start(in io.Reader, out io.Writer) {
-	// scanner := bufio.NewScanner(in)
+// Start begins reading expressions. Stops when no more input.
+func Start(in io.Reader, out, errout io.Writer) {
 
-	// for {
-	// 	fmt.Printf(PROMPT)
-	// 	scanned := scanner.Scan()
-	// 	if !scanned {
-	// 		return
-	// 	}
+	scanner := bufio.NewScanner(in)
 
-	// 	line := scanner.Text()
-	// 	l := lexer.New(line)
+	var input []string
 
-	// 	for tok := l.NextToken(); tok.Type != token.EOF; tok = l.NextToken() {
-	// 		fmt.Printf("%+v\n", tok)
-	// 	}
-	// }
+	for {
+		fmt.Fprintf(out, Prompt)
+		scanned := scanner.Scan()
+		if !scanned {
+			return
+		}
+
+		nextLine := scanner.Text()
+		if nextLine != "." {
+			input = append(input, nextLine)
+			continue
+		}
+
+		l := lexer.New(input)
+		l.LogDump()
+		p := parse.New(l)
+
+		result, err := p.Parse()
+		if err != nil {
+			_, err = fmt.Fprintf(errout, "%s\n", err)
+			if err != nil {
+				log.Fatalf("%s", err)
+			}
+		}
+
+		_, err = fmt.Fprintf(out, "%s\n", result.Sexpr())
+		if err != nil {
+			log.Fatalf("%s", err)
+		}
+
+		input = []string{}
+	}
 }

@@ -157,7 +157,10 @@ func (lex Lexeme) CharNo() int {
 }
 
 // Literal returns the string of the actual value found in the input.
-func (lex Lexeme) Literal() string {
+func (lex *Lexeme) Literal() string {
+	if lex == nil {
+		return ""
+	}
 	return lex.literal
 }
 
@@ -194,6 +197,16 @@ func New(input []string) *Lexer {
 	l.lexed = append(l.lexed, eof)
 
 	return l
+}
+
+// Last returns a token relative to the end of the lexed tokens.
+func (lex *Lexer) Last(i int) token.Token {
+	l := len(lex.lexed) + i
+	if l > len(lex.lexed) {
+		return token.NADA
+	}
+
+	return lex.lexed[l].token
 }
 
 func lex(line string, lineNo int) []Lexeme {
