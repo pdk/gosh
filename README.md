@@ -26,6 +26,36 @@ Multiple assignment is supported:
 
     x, s := 1, "boo"
 
+### scope
+
+Variables are scoped by package (`pkg`) and by `func`. By default, the
+interpreter works in the package `global`. It is invalid to say `pkg global` in
+code. There is no block-level scope.
+
+Within a function, these are local:
+
+1. named parameters/arguments
+2. named channels
+3. anything on the left side of an assignment operator (`:=`, `+=`, `?=`)
+
+The exception to #3 is variables identified by the `extern` statement.
+
+    a := 1
+    c := 3
+
+    f := func(b) {
+        extern c    # we assign to c within this func, but it's not local
+
+        fmt.printf("%d\n", a)    # uninitialized local variable.
+        fmt.printf("%d\n", c)    # valid reference to global c
+
+        a := 5      # a is assigned in the function, so it's local
+        c := 8      # valid assignment to outer variable c
+    }
+
+All other names within a function are regarded as "free variables" and are
+resolved with lexical scoping.
+
 ## simple types
 
 1. Bool (`true` or `false`)
