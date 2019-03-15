@@ -2,8 +2,6 @@ package parse
 
 import (
 	"fmt"
-	"strconv"
-	"unicode"
 
 	"github.com/pdk/gosh/lexer"
 	"github.com/pdk/gosh/token"
@@ -57,101 +55,6 @@ func (p *Parser) peekIs(tok token.Token) bool {
 	}
 
 	return l.Token() == tok
-}
-
-// Arity designates if a node is Lefty/Righty
-type Arity int
-
-// Flavours of Arity
-const (
-	NotSpecified Arity = iota
-	Lefty              // has an arg to the left
-	Righty             // only has args (if any) to the right
-)
-
-// Node is the result of a parse.
-type Node struct {
-	lexeme   *lexer.Lexeme
-	children []*Node
-	arity    Arity
-}
-
-// Print will print a parse tree with indentation.
-func (n *Node) Print() {
-	n.print(0)
-}
-
-// Literal returns the literal value of the lexeme.
-func (n *Node) Literal() string {
-	return n.lexeme.Literal()
-}
-
-// Token returns the token of the lexeme of the node.
-func (n *Node) Token() token.Token {
-	if n.lexeme == nil {
-		return token.NADA
-	}
-	return n.lexeme.Token()
-}
-
-func (n *Node) firstChild() *Node {
-	if len(n.children) == 0 {
-		return nil
-	}
-
-	return n.children[0]
-}
-
-func (n *Node) print(depth int) {
-	fmt.Printf("%s\n", n.lexeme.IndentString(3*depth))
-	for _, c := range n.children {
-		c.print(depth + 1)
-	}
-}
-
-// Value returns the Lexeme of the parsed node.
-func (n *Node) Value() *lexer.Lexeme {
-	return n.lexeme
-}
-
-// Children returns the children of a parsed node.
-func (n *Node) Children() []*Node {
-	return n.children
-}
-
-func containsQuotable(s string) bool {
-	for _, c := range s {
-		if c == '(' || c == ')' || unicode.IsSpace(c) {
-			return true
-		}
-	}
-	return false
-}
-
-func sexprQuote(s string) string {
-	if containsQuotable(s) {
-		return strconv.Quote(s)
-	}
-	return s
-}
-
-// Sexpr returns an s-expression of a parse, e.g. "1+2" => "(+ 1 2)".
-func (n *Node) Sexpr() string {
-
-	if len(n.children) == 0 {
-		return sexprQuote(n.lexeme.Literal())
-	}
-
-	s := "("
-	s += sexprQuote(n.lexeme.Literal())
-
-	for _, c := range n.children {
-		s += " " + c.Sexpr()
-	}
-
-	s += ")"
-
-	return s
 }
 
 type nudFunc func(*Node, *Parser) (*Node, error)
@@ -241,6 +144,7 @@ func init() {
 	tdopRegistry[token.WHILE] = whileExpr(P_CONTROL)
 	tdopRegistry[token.FUNC] = funcExpr(P_CONTROL)
 	tdopRegistry[token.IF] = ifExpr(P_CONTROL)
+	tdopRegistry[token.EXTERN] = externExpr(P_CONTROL)
 
 	// TODO
 	tdopRegistry[token.COLON] = tdopEntry{}   // named parameters on function invocation
@@ -344,6 +248,39 @@ func ifExpr(bp int) tdopEntry {
 	return tdopEntry{
 		bindingPower: bp,
 		nud:          ifExprNud,
+	}
+}
+
+func externExpr(bp int) tdopEntry {
+	return tdopEntry{
+		bindingPower: bp,
+		nud: func(node *Node, p *Parser) (*Node, error) {
+
+			for {
+				if p.peekIs(token.IDENT) {
+					ident, err := p.advance(token.IDENT)
+					node.children = append(node.children, ident)
+					if err != nil {
+						return node, err
+					}
+					continue
+				}
+				if p.peekIs(token.COMMA) {
+					_, err := p.advance(token.COMMA)
+					if err != nil {
+						return node, err
+					}
+					continue
+				}
+				if p.peekIs(token.SEMI) {
+					_, err := p.advance(token.SEMI)
+					return node, err
+				}
+
+				node := newNode(p.next())
+				return node, parseError(node, "extern expecting identifier")
+			}
+		},
 	}
 }
 

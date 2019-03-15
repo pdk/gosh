@@ -6,12 +6,28 @@ import (
 	"io"
 	"log"
 
+	"github.com/pdk/gosh/compile"
 	"github.com/pdk/gosh/lexer"
 	"github.com/pdk/gosh/parse"
 )
 
 // Prompt is show when waiting for input.
 var Prompt = ">>> "
+
+// PrintAnalysis does an analysis of a parse result and prints the result.
+func PrintAnalysis(ast *parse.Node) {
+
+	bits := compile.NewAnalysis()
+
+	ctree := compile.ConvertParseToCompile(ast)
+	ctree.ScopeAnalysis(bits)
+
+	bits.Print()
+
+	for _, f := range ctree.AllFuncs() {
+		f.Analysis().Print()
+	}
+}
 
 // Start begins reading expressions. Stops when no more input.
 func Start(in io.Reader, out, errout io.Writer) {
@@ -34,7 +50,7 @@ func Start(in io.Reader, out, errout io.Writer) {
 		}
 
 		l := lexer.New(input)
-		l.LogDump()
+		// l.LogDump()
 		p := parse.New(l)
 
 		result, err := p.Parse()
@@ -49,6 +65,8 @@ func Start(in io.Reader, out, errout io.Writer) {
 		if err != nil {
 			log.Fatalf("%s", err)
 		}
+
+		PrintAnalysis(result)
 
 		input = []string{}
 	}

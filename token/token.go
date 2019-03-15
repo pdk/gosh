@@ -71,6 +71,7 @@ const (
 	WHILE                     // while
 	NIL                       // nil
 	ENUM                      // enum
+	EXTERN                    // extern
 	SYS                       // sys
 	KeywordEnd                // end of reserved/key words
 	TransformResultsBeg       // start of items produced by parser transforms
@@ -139,6 +140,7 @@ var tokens = [...]string{
 	WHILE:      "WHILE",
 	NIL:        "NIL",
 	ENUM:       "ENUM",
+	EXTERN:     "EXTERN",
 	SYS:        "SYS",
 	FUNCAPPLY:  "FUNCAPPLY",
 	METHAPPLY:  "METHAPPLY",
@@ -177,6 +179,7 @@ var reserved = map[string]Token{
 	"while":    WHILE,
 	"nil":      NIL,
 	"enum":     ENUM,
+	"extern":   EXTERN,
 	"sys":      SYS,
 }
 

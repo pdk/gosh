@@ -8,6 +8,7 @@ func (n *Node) applyTransforms() *Node {
 
 	n = n.transformFuncApply()
 	n = n.raiseSingleTuples()
+	n = n.raiseComma()
 
 	for i, c := range n.children {
 		n.children[i] = c.applyTransforms()
@@ -15,6 +16,17 @@ func (n *Node) applyTransforms() *Node {
 
 	n = n.transformReturnComma()
 	n = n.transformSemiTreeToList()
+
+	return n
+}
+
+// raiseComma will flatten comma trees.
+// (, (, a b) c) == (, a b c)
+func (n *Node) raiseComma() *Node {
+
+	for n.Token() == token.COMMA && n.children[0].Token() == token.COMMA {
+		n = n.raiseFirstChildren()
+	}
 
 	return n
 }
