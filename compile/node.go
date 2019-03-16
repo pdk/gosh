@@ -100,7 +100,7 @@ func (a *Analysis) MissingBinding() []string {
 func names(m map[string]bool) []string {
 	var x []string
 
-	for n, _ := range m {
+	for n := range m {
 		x = append(x, n)
 	}
 
