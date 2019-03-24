@@ -132,6 +132,11 @@ func ConvertParseToCompile(ast *parse.Node) *Node {
 	return node
 }
 
+// Error returns an error associated with a particular node.
+func (n *Node) Error(mesg string, args ...interface{}) error {
+	return n.lexeme.Error(mesg, args...)
+}
+
 // Token returns the token of the lexeme of the node.
 func (n *Node) Token() token.Token {
 	return n.lexeme.Token()
@@ -154,13 +159,14 @@ func (n *Node) IsToken(toks ...token.Token) bool {
 	return false
 }
 
-// AssertIsToken will stop the programs if the token is not one of the specified
+// AssertIsToken returns an error if the token is not one of the specified
 // options.
-func (n *Node) AssertIsToken(toks ...token.Token) {
+func (n *Node) AssertIsToken(toks ...token.Token) error {
 	if !n.IsToken(toks...) {
-		log.Fatalf("expected to find %s, but found %s at line %d, col %d", toks,
-			n.Literal(), n.lexeme.LineNo(), n.lexeme.CharNo())
+		return n.Error("expected to find (one of) %s", toks)
 	}
+
+	return nil
 }
 
 // addStrings puts all the names in a slice into a map.
@@ -172,10 +178,10 @@ func addStrings(m map[string]bool, names []string) {
 }
 
 // FuncAnalysis gathers info about a func/methods variables/identifiers.
-func (n *Node) FuncAnalysis(parent *Analysis) bool {
+func (n *Node) FuncAnalysis(parent *Analysis) (bool, error) {
 
 	if !n.IsToken(token.FUNC) {
-		return false
+		return false, nil
 	}
 
 	if len(n.children) != 3 {
@@ -190,8 +196,17 @@ func (n *Node) FuncAnalysis(parent *Analysis) bool {
 	collector.parent = parent
 	n.analysis = collector
 
-	collector.parameters = n.children[0].Idents()
-	collector.channels = n.children[1].Idents()
+	var err error
+	collector.parameters, err = n.children[0].Idents()
+	if err != nil {
+		return true, err
+	}
+
+	collector.channels, err = n.children[1].Idents()
+	if err != nil {
+		return true, err
+	}
+
 	collector.body = n.children[2]
 
 	collector.body.ScopeAnalysis(collector)
@@ -200,33 +215,38 @@ func (n *Node) FuncAnalysis(parent *Analysis) bool {
 		delete(collector.locals, e)
 	}
 
-	return true
+	return true, nil
 }
 
 // MethApplyAnalysis checks if the node is a method-apply, and handles if so.
 // Return true if handled, false if not.
-func (n *Node) MethApplyAnalysis(collector *Analysis) bool {
+func (n *Node) MethApplyAnalysis(collector *Analysis) (bool, error) {
 
 	if !n.IsToken(token.METHAPPLY) {
-		return false
+		return false, nil
 	}
 
 	// first child is obj
-	collector.identifiers[n.children[0].PrimaryIdent()] = true
+	ident, err := n.children[0].PrimaryIdent()
+	if err != nil {
+		return true, err
+	}
+
+	collector.identifiers[ident] = true
 	// second child is meth name. skip
 	// third and subsequent are expressions to eval as params
 	for _, each := range n.children[2:] {
 		each.ScopeAnalysis(collector)
 	}
 
-	return true
+	return true, nil
 }
 
 // AssignAnalysis collects identifiers on the LHS of any assignment.
-func (n *Node) AssignAnalysis(collector *Analysis) {
+func (n *Node) AssignAnalysis(collector *Analysis) error {
 
 	if !n.IsToken(token.ASSIGN, token.QASSIGN, token.ACCUM) {
-		return
+		return nil
 	}
 
 	// identify left-most identifiers of nodes on left side as local
@@ -236,23 +256,37 @@ func (n *Node) AssignAnalysis(collector *Analysis) {
 
 	if leftHandSide.IsToken(token.COMMA, token.LPAREN) {
 		for _, each := range leftHandSide.children {
-			id := each.PrimaryIdent()
+			id, err := each.PrimaryIdent()
+			if err != nil {
+				return err
+			}
 			collector.locals[id] = true
 		}
 
-		return
+		return nil
 	}
 
-	id := leftHandSide.PrimaryIdent()
+	id, err := leftHandSide.PrimaryIdent()
+	if err != nil {
+		return err
+	}
+
 	collector.locals[id] = true
+	return nil
 }
 
 // ScopeAnalysis crawls the tree and identifies identifiers to find free
 // variables and unknown idents.
-func (n *Node) ScopeAnalysis(collector *Analysis) {
+func (n *Node) ScopeAnalysis(collector *Analysis) error {
 
-	if n.FuncAnalysis(collector) || n.MethApplyAnalysis(collector) {
-		return
+	done, err := n.FuncAnalysis(collector)
+	if done || err != nil {
+		return err
+	}
+
+	done, err = n.MethApplyAnalysis(collector)
+	if done || err != nil {
+		return err
 	}
 
 	n.AssignAnalysis(collector)
@@ -272,40 +306,53 @@ func (n *Node) ScopeAnalysis(collector *Analysis) {
 	if n.IsToken(token.PERIOD) {
 		// ignore names on the right of the dot.
 		n.children[0].ScopeAnalysis(collector)
-		return
+		return nil
 	}
 
 	for _, c := range n.children {
 		c.ScopeAnalysis(collector)
 	}
+
+	return nil
 }
 
 // Idents returns a slice of strings of the idents' literal values.
-func (n *Node) Idents() []string {
+func (n *Node) Idents() ([]string, error) {
 
-	n.AssertIsToken(token.IDENT, token.COMMA, token.LSQR, token.LPAREN)
+	err := n.AssertIsToken(token.IDENT, token.COMMA, token.LSQR, token.LPAREN)
+	if err != nil {
+		return []string{}, err
+	}
 
 	if n.IsToken(token.IDENT) {
-		return []string{n.Literal()}
+		return []string{n.Literal()}, nil
 	}
 
 	var ids []string
 	for _, ch := range n.children {
-		ids = append(ids, ch.Idents()...)
+		idents, err := ch.Idents()
+		if err != nil {
+			return ids, err
+		}
+
+		ids = append(ids, idents...)
 	}
 
-	return ids
+	return ids, nil
 }
 
 // PrimaryIdent returns the primary identifier name of an expression.
 // a[b] => a
 // a.b.c.x[23] => a
-func (n *Node) PrimaryIdent() string {
+func (n *Node) PrimaryIdent() (string, error) {
 
-	n.AssertIsToken(token.IDENT, token.PERIOD, token.LSQR)
+	err := n.AssertIsToken(token.IDENT, token.PERIOD, token.LSQR)
+	if err != nil {
+		return "", nil
+	}
 
 	if n.IsToken(token.IDENT) {
-		return n.lexeme.Literal()
+		return n.lexeme.Literal(), nil
 	}
 
 	return n.children[0].PrimaryIdent()

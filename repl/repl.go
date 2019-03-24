@@ -4,7 +4,6 @@ import (
 	"bufio"
 	"fmt"
 	"io"
-	"log"
 	"strings"
 
 	"github.com/pdk/gosh/compile"
@@ -16,14 +15,14 @@ import (
 var Prompt = ">>> "
 
 // Analyze does an analysis of a parse result and prints the result.
-func Analyze(ast *parse.Node) (*compile.Node, *compile.Analysis) {
+func Analyze(ast *parse.Node) (*compile.Node, error) {
 
 	bits := compile.NewAnalysis()
 
 	ctree := compile.ConvertParseToCompile(ast)
 	ctree.ScopeAnalysis(bits)
 
-	return ctree, bits
+	return ctree, nil
 }
 
 // Start begins reading expressions. Stops when no more input.
@@ -55,38 +54,9 @@ func Start(in io.Reader, out, errout io.Writer) {
 			continue
 		}
 
-		l := lexer.New("REPL", input)
-		// l.LogDump()
-		p := parse.New(l)
-
-		result, err := p.Parse()
+		vals, err := Evaluate("REPL", input, topContext)
 		if err != nil {
-			_, err = fmt.Fprintf(errout, "%s\n", err)
-			if err != nil {
-				log.Fatalf("%s", err)
-			}
-		}
-
-		_, err = fmt.Fprintf(out, "%s\n", result.Sexpr())
-		if err != nil {
-			log.Fatalf("%s", err)
-		}
-
-		ast, _ := Analyze(result)
-
-		// ast, bits := Analyze(result)
-
-		// bits.Print()
-		// for _, f := range ast.AllFuncs() {
-		// 	f.Analysis().Print()
-		// }
-
-		eval := ast.Evaluator()
-
-		vals, err := eval(topContext)
-
-		if err != nil {
-			log.Printf("Error: %s", err)
+			fmt.Fprintf(errout, "%s\n", err)
 		}
 
 		if len(vals) > 0 {
@@ -100,6 +70,30 @@ func Start(in io.Reader, out, errout io.Writer) {
 		input = []string{}
 		parenCount, bracketCount = 0, 0
 	}
+}
+
+// Evaluate lexes, parses, analyzes, compiles, and then evaluates the input.
+func Evaluate(inputName string, input []string, env *compile.Variables) ([]compile.Value, error) {
+
+	l := lexer.New(inputName, input)
+	p := parse.New(l)
+
+	result, err := p.Parse()
+	if err != nil {
+		return compile.Values(), err
+	}
+
+	ast, err := Analyze(result)
+	if err != nil {
+		return compile.Values(), err
+	}
+
+	eval, err := ast.Evaluator()
+	if err != nil {
+		return compile.Values(), err
+	}
+
+	return eval(env)
 }
 
 func countBrackets(line string, parenCount, bracketCount int) (int, int) {
