@@ -133,7 +133,7 @@ func (n *Node) Literal() string {
 	return n.lexeme.Literal()
 }
 
-// IsToken checks if the token of the lexeme of the node is a particular token.
+// IsToken checks if the token of the lexeme of the node is any of the given tokens.
 func (n *Node) IsToken(toks ...token.Token) bool {
 
 	for _, tok := range toks {

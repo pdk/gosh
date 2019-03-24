@@ -13,9 +13,10 @@ import (
 
 // Lexer reads an input string identifying tokens.
 type Lexer struct {
-	input []string // input is a slice of strings. each string is a line from the input.
-	lexed []Lexeme // the result of lexing an input file is a slice of Lexemes.
-	pos   int      // track position for Next(), Peek()
+	inputName string   // the name of where the input is coming from (usually a filename)
+	input     []string // input is a slice of strings. each string is a line from the input.
+	lexed     []Lexeme // the result of lexing an input file is a slice of Lexemes.
+	pos       int      // track position for Next(), Peek()
 }
 
 // Lexemes returns the tokenized result
@@ -23,6 +24,7 @@ func (lex *Lexer) Lexemes() []Lexeme {
 	return lex.lexed
 }
 
+// LogDump will output the complete list of tokens identified.
 func (lex *Lexer) LogDump() {
 	for _, x := range lex.lexed {
 		log.Printf("%s", x.String())
@@ -101,14 +103,21 @@ type Lexeme struct {
 	literal    string
 	lineNumber int
 	charNumber int
+	lexer      *Lexer
 }
 
 // NewLexeme makes a new Lexeme, with literal.
-func NewLexeme(tok token.Token, lit string) Lexeme {
+func (lex *Lexer) NewLexeme(tok token.Token, lit string) Lexeme {
 	return Lexeme{
+		lexer:   lex,
 		token:   tok,
 		literal: lit,
 	}
+}
+
+// Lexer returns the Lexer that found the lexeme.
+func (lex Lexeme) Lexer() *Lexer {
+	return lex.lexer
 }
 
 // WithToken will override the existing token with a new value.
@@ -183,17 +192,18 @@ func (lex Lexeme) IndentString(n int) string {
 }
 
 // New returns a new Lexer. Actually does all the work of lexing the input.
-func New(input []string) *Lexer {
+func New(name string, input []string) *Lexer {
 
 	l := &Lexer{
-		input: input,
+		inputName: name,
+		input:     input,
 	}
 
-	for lineOffset, line := range input {
-		l.lexed = append(l.lexed, lex(line, lineOffset+1)...)
+	for lineOffset := range input {
+		l.lexed = append(l.lexed, l.processOneLine(lineOffset)...)
 	}
 
-	eof := NewLexeme(token.EOF, "").at(len(input)+1, 0)
+	eof := l.NewLexeme(token.EOF, "").at(len(input)+1, 0)
 	l.lexed = append(l.lexed, eof)
 
 	return l
@@ -209,7 +219,10 @@ func (lex *Lexer) Last(i int) token.Token {
 	return lex.lexed[l].token
 }
 
-func lex(line string, lineNo int) []Lexeme {
+func (lex *Lexer) processOneLine(lineOffset int) []Lexeme {
+
+	line := lex.input[lineOffset]
+	lineNo := lineOffset + 1
 
 	var xems []Lexeme
 
@@ -218,7 +231,10 @@ func lex(line string, lineNo int) []Lexeme {
 
 	i := 0
 	for i < l {
-		nt, c := nextLexeme(chars[i:])
+
+		i += countWhitespace(chars[i:])
+
+		nt, c := lex.nextLexeme(chars[i:])
 		if nt.token != token.NADA {
 			xems = append(xems, nt.at(lineNo, i+1))
 		}
@@ -232,7 +248,7 @@ func lex(line string, lineNo int) []Lexeme {
 	// Need to check last token on the line to see if we should add a semicolon.
 	// Before doing that, pull off the last item, IFF it's a comment. Later
 	// we'll stick the comment back on, following the semicolon.
-	comment := []Lexeme{}
+	var comment []Lexeme
 	if xems[len(xems)-1].token == token.COMMENT {
 		comment = append(comment, xems[len(xems)-1])
 		xems = xems[0 : len(xems)-1]
@@ -245,7 +261,7 @@ func lex(line string, lineNo int) []Lexeme {
 
 	lastTok := xems[len(xems)-1].token
 	if doAddSemiAfter(lastTok) {
-		xems = append(xems, NewLexeme(token.SEMI, ";").at(lineNo, i+1))
+		xems = append(xems, lex.NewLexeme(token.SEMI, ";").at(lineNo, i+1))
 	}
 
 	// reattach comment (if any) and done
@@ -292,19 +308,16 @@ func stringRunes(line string) []rune {
 	return chars
 }
 
-func nextLexeme(chars []rune) (Lexeme, int) {
-
-	i := countWhitespace(chars)
-	chars = chars[i:]
+func (lex *Lexer) nextLexeme(chars []rune) (Lexeme, int) {
 
 	if len(chars) == 0 {
-		return NewLexeme(token.NADA, ""), i
+		return lex.NewLexeme(token.NADA, ""), 0
 	}
 
 	ch := chars[0]
 
 	if ch == '#' {
-		return NewLexeme(token.COMMENT, string(chars)), i + len(chars)
+		return lex.NewLexeme(token.COMMENT, string(chars)), len(chars)
 	}
 
 	peek := ' '
@@ -316,124 +329,126 @@ func nextLexeme(chars []rune) (Lexeme, int) {
 
 	case ':':
 		if peek == '=' {
-			return NewLexeme(token.ASSIGN, ":="), i + 2
+			return lex.NewLexeme(token.ASSIGN, ":="), 2
 		}
-		return NewLexeme(token.COLON, ":"), i + 1
+		return lex.NewLexeme(token.COLON, ":"), 1
 
 	case '!':
 		if peek == '=' {
-			return NewLexeme(token.NOT_EQUAL, "!="), i + 2
+			return lex.NewLexeme(token.NOT_EQUAL, "!="), 2
 		}
-		return NewLexeme(token.NOT, "!"), i + 1
+		return lex.NewLexeme(token.NOT, "!"), 1
 
 	case '+':
 		if peek == '=' {
-			return NewLexeme(token.ACCUM, "+="), i + 2
+			return lex.NewLexeme(token.ACCUM, "+="), 2
 		}
-		return NewLexeme(token.PLUS, "+"), i + 1
+		return lex.NewLexeme(token.PLUS, "+"), 1
 
 	case '>':
 		if peek == '>' {
-			return NewLexeme(token.RPIPE, ">>"), i + 2
+			return lex.NewLexeme(token.RPIPE, ">>"), 2
 		}
 		if peek == '=' {
-			return NewLexeme(token.GRTR_EQUAL, ">="), i + 2
+			return lex.NewLexeme(token.GRTR_EQUAL, ">="), 2
 		}
-		return NewLexeme(token.GRTR, ">"), i + 1
+		return lex.NewLexeme(token.GRTR, ">"), 1
 
 	case '<':
 		if peek == '<' {
-			return NewLexeme(token.LPIPE, "<<"), i + 2
+			return lex.NewLexeme(token.LPIPE, "<<"), 2
 		}
 		if peek == '=' {
-			return NewLexeme(token.LESS_EQUAL, "<="), i + 2
+			return lex.NewLexeme(token.LESS_EQUAL, "<="), 2
 		}
-		return NewLexeme(token.LESS, "<"), i + 1
+		return lex.NewLexeme(token.LESS, "<"), 1
 
 	case '&':
 		if peek == '&' {
-			return NewLexeme(token.LOG_AND, "&&"), i + 2
+			return lex.NewLexeme(token.LOG_AND, "&&"), 2
 		}
-		return NewLexeme(token.ILLEGAL, "&"), i + 1
+		return lex.NewLexeme(token.ILLEGAL, "&"), 1
 
 	case '=':
 		if peek == '=' {
-			return NewLexeme(token.EQUAL, "=="), i + 2
+			return lex.NewLexeme(token.EQUAL, "=="), 2
 		}
-		return NewLexeme(token.ILLEGAL, "="), i + 1
+		return lex.NewLexeme(token.ILLEGAL, "="), 1
 
 	case '|':
 		if peek == '|' {
-			return NewLexeme(token.LOG_OR, "||"), i + 2
+			return lex.NewLexeme(token.LOG_OR, "||"), 2
 		}
-		return NewLexeme(token.ILLEGAL, "|"), i + 1
+		return lex.NewLexeme(token.ILLEGAL, "|"), 1
 
 	case '?':
 		if peek == '=' {
-			return NewLexeme(token.QASSIGN, "?="), i + 2
+			return lex.NewLexeme(token.QASSIGN, "?="), 2
 		}
-		return NewLexeme(token.ILLEGAL, "?"), i + 1
+		return lex.NewLexeme(token.ILLEGAL, "?"), 1
 
 	case '-':
-		return NewLexeme(token.MINUS, "-"), i + 1
+		return lex.NewLexeme(token.MINUS, "-"), 1
 	case ',':
-		return NewLexeme(token.COMMA, ","), i + 1
+		return lex.NewLexeme(token.COMMA, ","), 1
 	case ';':
-		return NewLexeme(token.SEMI, ";"), i + 1
+		return lex.NewLexeme(token.SEMI, ";"), 1
 	case '.':
-		return NewLexeme(token.PERIOD, "."), i + 1
+		return lex.NewLexeme(token.PERIOD, "."), 1
 	case '(':
-		return NewLexeme(token.LPAREN, "("), i + 1
+		return lex.NewLexeme(token.LPAREN, "("), 1
 	case ')':
-		return NewLexeme(token.RPAREN, ")"), i + 1
+		return lex.NewLexeme(token.RPAREN, ")"), 1
 	case '[':
-		return NewLexeme(token.LSQR, "["), i + 1
+		return lex.NewLexeme(token.LSQR, "["), 1
 	case ']':
-		return NewLexeme(token.RSQR, "]"), i + 1
+		return lex.NewLexeme(token.RSQR, "]"), 1
 	case '{':
-		return NewLexeme(token.LBRACE, "{"), i + 1
+		return lex.NewLexeme(token.LBRACE, "{"), 1
 	case '}':
-		return NewLexeme(token.RBRACE, "}"), i + 1
+		return lex.NewLexeme(token.RBRACE, "}"), 1
 	case '*':
-		return NewLexeme(token.MULT, "*"), i + 1
+		return lex.NewLexeme(token.MULT, "*"), 1
 	case '/':
-		return NewLexeme(token.DIV, "/"), i + 1
+		return lex.NewLexeme(token.DIV, "/"), 1
 	case '%':
-		return NewLexeme(token.MODULO, "%"), i + 1
+		return lex.NewLexeme(token.MODULO, "%"), 1
 
 	case '$':
 		tok := token.DOLLAR
+		x := 1
 		if peek == '$' {
 			tok = token.DDOLLAR
+			x = 2
 		}
 		command, l := scanCommand(chars)
-		return NewLexeme(tok, string(command)), i + l
+		return lex.NewLexeme(tok, string(command)), x + l
 	}
 
 	if unicode.IsDigit(ch) {
 		number, isFloat := scanNumeric(chars)
 		if isFloat {
-			return NewLexeme(token.FLOAT, string(number)), i + len(number)
+			return lex.NewLexeme(token.FLOAT, string(number)), len(number)
 		}
-		return NewLexeme(token.INT, string(number)), i + len(number)
+		return lex.NewLexeme(token.INT, string(number)), len(number)
 	}
 
 	if unicode.IsLetter(ch) || ch == '_' {
 		ident := string(scanIdent(chars))
 		which := token.CheckIdent(ident)
-		return NewLexeme(which, ident), i + len(ident)
+		return lex.NewLexeme(which, ident), len(ident)
 	}
 
 	if ch == '"' {
 		str0 := string(scanString(chars))
 		str, err := strconv.Unquote(str0)
 		if err != nil {
-			return NewLexeme(token.ILLEGAL, str0), i + len(str0)
+			return lex.NewLexeme(token.ILLEGAL, str0), len(str0)
 		}
-		return NewLexeme(token.STRING, str), i + len(str0)
+		return lex.NewLexeme(token.STRING, str), len(str0)
 	}
 
-	return NewLexeme(token.ILLEGAL, string(ch)), i + 1
+	return lex.NewLexeme(token.ILLEGAL, string(ch)), 1
 }
 
 func scanString(chars []rune) []rune {

@@ -340,7 +340,7 @@ func funcExpr(bp int) tdopEntry {
 			} else {
 				// Make sure there is an empty channel list as child position 2,
 				// even if no channels were named.
-				xeme := lexer.NewLexeme(token.LSQR, "[")
+				xeme := node.Lexeme().Lexer().NewLexeme(token.LSQR, "[")
 				channelNode := newNode(&xeme)
 				node.children = append(node.children, channelNode)
 			}

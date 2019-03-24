@@ -29,6 +29,8 @@ func Analyze(ast *parse.Node) (*compile.Node, *compile.Analysis) {
 // Start begins reading expressions. Stops when no more input.
 func Start(in io.Reader, out, errout io.Writer) {
 
+	topContext := compile.GlobalScope()
+
 	scanner := bufio.NewScanner(in)
 
 	var input []string
@@ -53,7 +55,7 @@ func Start(in io.Reader, out, errout io.Writer) {
 			continue
 		}
 
-		l := lexer.New(input)
+		l := lexer.New("REPL", input)
 		// l.LogDump()
 		p := parse.New(l)
 
@@ -81,7 +83,7 @@ func Start(in io.Reader, out, errout io.Writer) {
 
 		eval := ast.Evaluator()
 
-		vals, err := eval()
+		vals, err := eval(topContext)
 
 		if err != nil {
 			log.Printf("Error: %s", err)

@@ -2,48 +2,35 @@ package compile
 
 import (
 	"fmt"
-	"log"
 	"strconv"
 
 	"github.com/golang/go/src/go/types"
 	"github.com/pdk/gosh/token"
 )
 
+// ValueMap provides access to current variable values.
+type ValueMap interface {
+	Value(string) (Value, error)
+	Set(string, Value) (Value, error)
+}
+
 // Evaluator is a function that can be evaluated. It may return some Values
 // and/or an error.
-type Evaluator func() ([]Value, error)
+type Evaluator func(ValueMap) ([]Value, error)
 
 // evaluatorProducer produces Evaluators for Nodes.
 type evaluatorProducer func(*Node) Evaluator
-
-// Value is a value that is the result of an evaluation.
-type Value struct {
-	isBasicKind bool
-	basicKind   types.BasicKind
-	basicValue  interface{}
-}
-
-func (v Value) String() string {
-
-	if !v.isBasicKind {
-		return "*unprintable*"
-	}
-
-	switch v.basicKind {
-	case types.Int64:
-		return strconv.FormatInt(v.basicValue.(int64), 10)
-	default:
-		return fmt.Sprintf("%s", v.basicValue)
-	}
-}
 
 var nodeEvaluator [token.TransformResultsEnd]evaluatorProducer
 
 func init() {
 	nodeEvaluator = [token.TransformResultsEnd]evaluatorProducer{
+		token.IDENT:  VariableLookup,
+		token.ASSIGN: AssignValues,
 		token.INT:    IntegerLiteral,
 		token.STRING: StringLiteral,
 		token.PLUS:   AdditionOperator,
+		token.COMMA:  MultiValueOperator,
 	}
 }
 
@@ -65,11 +52,10 @@ func IntegerLiteral(n *Node) Evaluator {
 	i, err := strconv.ParseInt(n.lexeme.Literal(), 10, 0)
 
 	if err != nil {
-		log.Printf("Error converting int literal %s on line %d col %d: %s",
-			n.Literal(), n.lexeme.LineNo(), n.lexeme.CharNo(), err)
+		n.lexeme.PrintError("Error converting int literal %s: %s", n.Literal(), err)
 	}
 
-	return func() ([]Value, error) {
+	return func(vars ValueMap) ([]Value, error) {
 		return []Value{
 			Value{
 				isBasicKind: true,
@@ -85,7 +71,7 @@ func StringLiteral(n *Node) Evaluator {
 
 	s := n.lexeme.Literal()
 
-	return func() ([]Value, error) {
+	return func(vars ValueMap) ([]Value, error) {
 		return []Value{
 			Value{
 				isBasicKind: true,
@@ -96,20 +82,128 @@ func StringLiteral(n *Node) Evaluator {
 	}
 }
 
+// MultiValueOperator produces multiple values, one per child.
+func MultiValueOperator(n *Node) Evaluator {
+
+	var evaluators []Evaluator
+
+	for _, child := range n.children {
+		eval := child.Evaluator()
+		// if err != nil {
+		// 	return func(vars ValueMap) ([]Value, error) {
+		// 		return []Value{}, fmt.Errorf("unable to construct evaluator: %s", err)
+		// 	}
+		// }
+
+		evaluators = append(evaluators, eval)
+	}
+
+	return func(vars ValueMap) ([]Value, error) {
+
+		var results []Value
+
+		for _, e := range evaluators {
+			r, err := e(vars)
+			if err != nil {
+				return []Value{}, err
+			}
+
+			results = append(results, r...)
+		}
+
+		return results, nil
+	}
+}
+
+// VariableLookup looks up and returns the value of a variable.
+func VariableLookup(n *Node) Evaluator {
+
+	varName := n.Literal()
+
+	return func(vars ValueMap) ([]Value, error) {
+
+		v, err := vars.Value(varName)
+
+		if err != nil {
+			return []Value{}, err
+		}
+
+		return []Value{v}, nil
+	}
+}
+
+// AssignValues evaluates the right-hand side and sets variables on the left-hand side.
+func AssignValues(n *Node) Evaluator {
+
+	badVars := func(vars ValueMap) ([]Value, error) {
+		return []Value{}, fmt.Errorf("left-hand side of assignment must be one or more identifiers")
+	}
+
+	var varNames []string
+
+	lhs := n.children[0]
+	switch lhs.Token() {
+	case token.IDENT:
+		varNames = append(varNames, lhs.Literal())
+	case token.COMMA:
+		for _, v := range lhs.children {
+			if !v.IsToken(token.IDENT) {
+				return badVars
+			}
+			varNames = append(varNames, v.Literal())
+		}
+	default:
+		return badVars
+	}
+
+	right := RightEval(n)
+
+	return func(vars ValueMap) ([]Value, error) {
+
+		r, err := right(vars)
+		if err != nil {
+			return []Value{}, err
+		}
+
+		if len(varNames) != len(r) {
+			return []Value{}, fmt.Errorf("count of variables on left does not match number of results on right side")
+		}
+
+		for i, n := range varNames {
+			_, err := vars.Set(n, r[i])
+			if err != nil {
+				return []Value{}, err
+			}
+		}
+
+		return r, nil
+	}
+}
+
+// LeftEval returns the evaluator of the first child.
+func LeftEval(n *Node) Evaluator {
+	return n.children[0].Evaluator()
+}
+
+// RightEval returns the evaluator of the second child.
+func RightEval(n *Node) Evaluator {
+	return n.children[1].Evaluator()
+}
+
 // AdditionOperator returns the value of an addition operation.
 func AdditionOperator(n *Node) Evaluator {
 
-	left := n.children[0].Evaluator()
-	right := n.children[1].Evaluator()
+	left := LeftEval(n)
+	right := RightEval(n)
 
-	return func() ([]Value, error) {
+	return func(vars ValueMap) ([]Value, error) {
 
-		r1, err1 := left()
+		r1, err1 := left(vars)
 		if err1 != nil {
 			return []Value{}, err1
 		}
 
-		r2, err2 := right()
+		r2, err2 := right(vars)
 		if err2 != nil {
 			return []Value{}, err2
 		}
@@ -144,13 +238,13 @@ func AdditionOperator(n *Node) Evaluator {
 			}, nil
 		}
 
-		return n.UnknownOperation()
+		return n.UnknownOperation(vars)
 	}
 }
 
 // UnknownOperation returns an error saying we don't know what to do with this
 // node.
-func (n *Node) UnknownOperation() ([]Value, error) {
+func (n *Node) UnknownOperation(vars ValueMap) ([]Value, error) {
 	return []Value{},
 		fmt.Errorf("unknown operation %s/%s on line %d col %d",
 			n.Token(), n.lexeme.Literal(), n.lexeme.LineNo(), n.lexeme.CharNo())

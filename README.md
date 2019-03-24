@@ -255,17 +255,17 @@ where `false` and `nil` are not equal.
     false == nil        # false
     nil == nil          # true
 
-The function `bool` can be used to convert some types to an actual `bool`. For
-numbers, 0 (zero) is false, anything else is true. For strings, if the value is
-"true" or "t", then it's `true`; for "" (empty string) or "nil", it's `nil`;
-otherwise it's `false`.
+## truthiness
+
+In many languages boolean operators can be used on non-boolean operands and there are rules for different types as to what values are truthy and which are not. In gosh, a value of any type can be used with `!`, `&&` and `||`. If the non-boolean values is `nil` then it is equivilent to false. Any non-`nil` value is equivilent to `true`.
 
     bool(1)             # true
-    bool(0)             # false
+    bool(0)             # true
     bool("true")        # true
-    bool("false")       # false
-    bool("yes")         # false
-    bool("")            # nil
+    bool("false")       # true
+    bool("yes")         # true
+    bool("")            # true
+    bool(int64(nil))    # false
 
 Boolean operators
 
@@ -278,6 +278,9 @@ Boolean operators
 
     expr1 && expr2
 
+If `expr1` is a bool and `true`, or any other type and non-`nil`, then `expr2` will be evaluated and the value of the expression will be the value of `expr2`. If `expr1` is a bool and not `true` (either `false` or `nil`), or if `expr1` is not a bool and the value is `nil`, then `expr2` will not be evaluated and the value of the expression will be the value of `expr1`.
+
+
 If the value of `expr1` is a `bool` and it is `true`, then `expr2` will be
 evaluated, and its value will be the value of the whole expression. If `expr1`
 is not a `bool`, or its value is not `true`, then the value of the expression is
@@ -285,7 +288,7 @@ the value of `expr1` (usually `false`).
 
     true && 42      # 42
     false && 42     # false
-    42 && true      # 42
+    42 && true      # true
     true && false   # false
 
 ### Logical OR ||
@@ -316,9 +319,9 @@ Precedence for `&&` and `||` is the same, and they are evaluated left-to-right.
     true && ("aa" || "bb")     # "aa"
     false && ("aa" || "bb")    # false
     true || "aa" && "bb"       # "bb"
-    false || "aa" && "bb"      # false
+    false || "aa" && "bb"      # "bb"
 
-    "yes" && true       # "yes"
+    "yes" && true       # true
     "no" || true        # "no"
 
     x := a == 1 && "one" || "something else"
@@ -329,10 +332,12 @@ If a is 1, then x will get "one", otherwise "something else".
 
     err == nil && return "meh", err
     err != nil || return "meg", err
+    err && return "meh", err
+    !err || return "meh", err
 
 Note that the following will not do what you expect:
 
-    err == nil && return "dandy" || return "failure"    ## wrong!!
+    err == nil && return "dandy" || return "failure"    ## (err == nil) && return ("dandy" || return "failure")
 
 While this will:
 

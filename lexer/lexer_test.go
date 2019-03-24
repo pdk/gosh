@@ -12,7 +12,7 @@ import (
 func TestIdent(t *testing.T) {
 
 	lines := reader.ReadLinesToStrings(strings.NewReader("blah"))
-	l := lexer.New(lines)
+	l := lexer.New("testing", lines)
 
 	if len(l.Lexemes()) != 3 {
 		t.Errorf("expected 3 tokens, got %d", len(l.Lexemes()))
@@ -58,7 +58,7 @@ func TestIf(t *testing.T) {
 func checkLexed(t *testing.T, input string, expected ...token.Token) {
 
 	lines := reader.ReadLinesToStrings(strings.NewReader(input))
-	l := lexer.New(lines)
+	l := lexer.New("testing", lines)
 
 	checkTokens(t, l, expected...)
 }
@@ -75,7 +75,7 @@ func toksOfLexed(lexed []lexer.Lexeme) []token.Token {
 func checkNext(t *testing.T, input string, expected ...token.Token) {
 
 	lines := reader.ReadLinesToStrings(strings.NewReader(input))
-	lex := lexer.New(lines)
+	lex := lexer.New("testing", lines)
 
 	match := true
 	var fromNext []token.Token
@@ -122,4 +122,12 @@ func checkTokens(t *testing.T, lex *lexer.Lexer, expected ...token.Token) {
 	lex.LogDump()
 
 	t.Errorf("tokens did not match: expected %s, got %s", expected, toks)
+}
+
+func TestStrings(t *testing.T) {
+
+	checkLexed(t, `"hello"`, token.STRING, token.SEMI, token.EOF)
+	checkLexed(t, `"hello" "world"`, token.STRING, token.STRING, token.SEMI, token.EOF)
+	checkLexed(t, `"hell   o   " "  wor   ld"`, token.STRING, token.STRING, token.SEMI, token.EOF)
+	checkLexed(t, `"\"hello\" \"world\""`, token.STRING, token.SEMI, token.EOF)
 }
