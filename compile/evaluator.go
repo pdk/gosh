@@ -6,17 +6,12 @@ import (
 
 	"github.com/golang/go/src/go/types"
 	"github.com/pdk/gosh/token"
+	"github.com/pdk/gosh/u"
 )
-
-// ValueMap provides access to current variable values.
-type ValueMap interface {
-	Value(string) (Value, error)
-	Set(string, Value) (Value, error)
-}
 
 // Evaluator is a function that can be evaluated. It may return some Values
 // and/or an error.
-type Evaluator func(ValueMap) ([]Value, error)
+type Evaluator func(*Variables) ([]Value, error)
 
 // evaluatorProducer produces Evaluators for Nodes.
 type evaluatorProducer func(*Node) Evaluator
@@ -25,12 +20,20 @@ var nodeEvaluator [token.TransformResultsEnd]evaluatorProducer
 
 func init() {
 	nodeEvaluator = [token.TransformResultsEnd]evaluatorProducer{
-		token.IDENT:  VariableLookup,
-		token.ASSIGN: AssignValues,
-		token.INT:    IntegerLiteral,
-		token.STRING: StringLiteral,
-		token.PLUS:   AdditionOperator,
-		token.COMMA:  MultiValueOperator,
+		token.IDENT:     VariableLookup,
+		token.ASSIGN:    AssignValues,
+		token.INT:       IntegerLiteral,
+		token.STRING:    StringLiteral,
+		token.PLUS:      AdditionOperator,
+		token.COMMA:     MultiValueOperator,
+		token.LPAREN:    MultiValueOperator,
+		token.TRUE:      TrueLiteral,
+		token.FALSE:     FalseLiteral,
+		token.NIL:       NilLiteral,
+		token.FUNC:      FuncDefinition,
+		token.FUNCAPPLY: FuncApplication,
+		token.STMTS:     StatementsEvaluator,
+		token.EXTERN:    Noop,
 	}
 }
 
@@ -46,6 +49,138 @@ func (n *Node) Evaluator() Evaluator {
 	return producer(n)
 }
 
+// FuncApplication applies a function to arguments.
+func FuncApplication(n *Node) Evaluator {
+
+	funcResolver := LeftEval(n)
+	var paramEvals []Evaluator
+
+	for _, child := range n.children[1:] {
+		eval := child.Evaluator()
+		// if err != nil {
+		// 	return func(vars *Variables) ([]Value, error) {
+		// 		return []Value{}, fmt.Errorf("unable to construct evaluator: %s", err)
+		// 	}
+		// }
+
+		paramEvals = append(paramEvals, eval)
+	}
+
+	return func(vars *Variables) ([]Value, error) {
+
+		fr, err := funcResolver(vars)
+		if err != nil {
+			return []Value{}, fmt.Errorf("unable to resolve function: %s", err)
+		}
+
+		if len(fr) != 1 || !fr[0].isFunction {
+			return []Value{}, fmt.Errorf("cannot apply a non-function")
+		}
+
+		f := fr[0].function
+
+		values := []Value{}
+		for _, eachEval := range paramEvals {
+			val, err := eachEval(vars)
+			if err != nil {
+				return []Value{}, err
+			}
+			values = append(values, val...)
+		}
+
+		if len(f.parameters) != len(values) {
+			return []Value{}, fmt.Errorf("number of arguments does not match number of parameters")
+		}
+
+		scope := NewScope(vars)
+
+		for n, v := range f.captured.values {
+			scope.SetRef(n, v)
+		}
+
+		for _, l := range f.locals {
+			scope.Set(l, Nil())
+		}
+
+		for i, p := range f.parameters {
+			scope.Set(p, values[i])
+		}
+
+		return f.body(scope)
+	}
+}
+
+// FuncDefinition returns a function.
+func FuncDefinition(n *Node) Evaluator {
+
+	return func(vars *Variables) ([]Value, error) {
+
+		f := Function{
+			parameters: n.analysis.parameters,
+			channels:   n.analysis.channels,
+			locals:     u.KeysOf(n.analysis.locals),
+			body:       n.analysis.body.Evaluator(),
+			captured:   NewScope(vars),
+		}
+
+		for _, v := range n.analysis.FreeVariables() {
+			ref, err := vars.Reference(v)
+			if err != nil {
+				return []Value{}, fmt.Errorf("unable to capture free variable %s: %s", v, err)
+			}
+			f.captured.SetRef(v, ref)
+		}
+
+		return []Value{FunctionValue(f)}, nil
+	}
+}
+
+// Noop does nothing and returns no values.
+func Noop(n *Node) Evaluator {
+	return func(vars *Variables) ([]Value, error) {
+		return []Value{}, nil
+	}
+}
+
+// NilLiteral returns nil.
+func NilLiteral(n *Node) Evaluator {
+	return func(vars *Variables) ([]Value, error) {
+		return []Value{
+			Value{
+				isNil: true,
+			},
+		}, nil
+	}
+}
+
+// TrueLiteral returns true.
+func TrueLiteral(n *Node) Evaluator {
+
+	return func(vars *Variables) ([]Value, error) {
+		return []Value{
+			Value{
+				isBasicKind: true,
+				basicKind:   types.Bool,
+				basicValue:  true,
+			},
+		}, nil
+	}
+}
+
+// FalseLiteral returns false.
+func FalseLiteral(n *Node) Evaluator {
+
+	return func(vars *Variables) ([]Value, error) {
+		return []Value{
+			Value{
+				isBasicKind: true,
+				basicKind:   types.Bool,
+				basicValue:  false,
+			},
+		}, nil
+	}
+}
+
 // IntegerLiteral returns the value of an integer.
 func IntegerLiteral(n *Node) Evaluator {
 
@@ -55,7 +190,7 @@ func IntegerLiteral(n *Node) Evaluator {
 		n.lexeme.PrintError("Error converting int literal %s: %s", n.Literal(), err)
 	}
 
-	return func(vars ValueMap) ([]Value, error) {
+	return func(vars *Variables) ([]Value, error) {
 		return []Value{
 			Value{
 				isBasicKind: true,
@@ -71,7 +206,7 @@ func StringLiteral(n *Node) Evaluator {
 
 	s := n.lexeme.Literal()
 
-	return func(vars ValueMap) ([]Value, error) {
+	return func(vars *Variables) ([]Value, error) {
 		return []Value{
 			Value{
 				isBasicKind: true,
@@ -79,6 +214,39 @@ func StringLiteral(n *Node) Evaluator {
 				basicValue:  s,
 			},
 		}, nil
+	}
+}
+
+// StatementsEvaluator evaluates a series of expressions, returning the value of the last expression.
+func StatementsEvaluator(n *Node) Evaluator {
+
+	var evaluators []Evaluator
+
+	for _, child := range n.children {
+		eval := child.Evaluator()
+		// if err != nil {
+		// 	return func(vars *Variables) ([]Value, error) {
+		// 		return []Value{}, fmt.Errorf("unable to construct evaluator: %s", err)
+		// 	}
+		// }
+
+		evaluators = append(evaluators, eval)
+	}
+
+	return func(vars *Variables) ([]Value, error) {
+
+		var results []Value
+
+		for _, e := range evaluators {
+			r, err := e(vars)
+			if err != nil {
+				return []Value{}, err
+			}
+
+			results = r
+		}
+
+		return results, nil
 	}
 }
 
@@ -90,7 +258,7 @@ func MultiValueOperator(n *Node) Evaluator {
 	for _, child := range n.children {
 		eval := child.Evaluator()
 		// if err != nil {
-		// 	return func(vars ValueMap) ([]Value, error) {
+		// 	return func(vars *Variables) ([]Value, error) {
 		// 		return []Value{}, fmt.Errorf("unable to construct evaluator: %s", err)
 		// 	}
 		// }
@@ -98,7 +266,7 @@ func MultiValueOperator(n *Node) Evaluator {
 		evaluators = append(evaluators, eval)
 	}
 
-	return func(vars ValueMap) ([]Value, error) {
+	return func(vars *Variables) ([]Value, error) {
 
 		var results []Value
 
@@ -120,7 +288,7 @@ func VariableLookup(n *Node) Evaluator {
 
 	varName := n.Literal()
 
-	return func(vars ValueMap) ([]Value, error) {
+	return func(vars *Variables) ([]Value, error) {
 
 		v, err := vars.Value(varName)
 
@@ -135,7 +303,7 @@ func VariableLookup(n *Node) Evaluator {
 // AssignValues evaluates the right-hand side and sets variables on the left-hand side.
 func AssignValues(n *Node) Evaluator {
 
-	badVars := func(vars ValueMap) ([]Value, error) {
+	badVars := func(vars *Variables) ([]Value, error) {
 		return []Value{}, fmt.Errorf("left-hand side of assignment must be one or more identifiers")
 	}
 
@@ -158,7 +326,7 @@ func AssignValues(n *Node) Evaluator {
 
 	right := RightEval(n)
 
-	return func(vars ValueMap) ([]Value, error) {
+	return func(vars *Variables) ([]Value, error) {
 
 		r, err := right(vars)
 		if err != nil {
@@ -196,7 +364,7 @@ func AdditionOperator(n *Node) Evaluator {
 	left := LeftEval(n)
 	right := RightEval(n)
 
-	return func(vars ValueMap) ([]Value, error) {
+	return func(vars *Variables) ([]Value, error) {
 
 		r1, err1 := left(vars)
 		if err1 != nil {
@@ -244,7 +412,7 @@ func AdditionOperator(n *Node) Evaluator {
 
 // UnknownOperation returns an error saying we don't know what to do with this
 // node.
-func (n *Node) UnknownOperation(vars ValueMap) ([]Value, error) {
+func (n *Node) UnknownOperation(vars *Variables) ([]Value, error) {
 	return []Value{},
 		fmt.Errorf("unknown operation %s/%s on line %d col %d",
 			n.Token(), n.lexeme.Literal(), n.lexeme.LineNo(), n.lexeme.CharNo())

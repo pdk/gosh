@@ -272,9 +272,8 @@ func externExpr(bp int) tdopEntry {
 					}
 					continue
 				}
-				if p.peekIs(token.SEMI) {
-					_, err := p.advance(token.SEMI)
-					return node, err
+				if p.peekIs(token.SEMI) || p.peekIs(token.RBRACE) {
+					return node, nil
 				}
 
 				node := newNode(p.next())

@@ -8,6 +8,7 @@ import (
 	"github.com/pdk/gosh/lexer"
 	"github.com/pdk/gosh/parse"
 	"github.com/pdk/gosh/token"
+	"github.com/pdk/gosh/u"
 )
 
 // Node is a node in a "compile" processing tree.
@@ -26,9 +27,11 @@ func (n *Node) Analysis() *Analysis {
 // Analysis contains info about what's been parsed.
 type Analysis struct {
 	identifiers map[string]bool
-	parameters  map[string]bool
-	channels    map[string]bool
+	parameters  []string
+	channels    []string
 	locals      map[string]bool
+	externs     map[string]bool
+	body        *Node
 	parent      *Analysis
 }
 
@@ -36,19 +39,19 @@ type Analysis struct {
 func NewAnalysis() *Analysis {
 	return &Analysis{
 		identifiers: make(map[string]bool),
-		parameters:  make(map[string]bool),
-		channels:    make(map[string]bool),
 		locals:      make(map[string]bool),
+		externs:     make(map[string]bool),
 	}
 }
 
 // Print prints out the results of an analysis.
 func (a *Analysis) Print() {
 	fmt.Printf("identifiers: %s\n", strings.Join(names(a.identifiers), ", "))
-	fmt.Printf("parameters: %s\n", strings.Join(names(a.parameters), ", "))
-	fmt.Printf("channels: %s\n", strings.Join(names(a.channels), ", "))
+	fmt.Printf("parameters: %s\n", strings.Join(a.parameters, ", "))
+	fmt.Printf("channels: %s\n", strings.Join(a.channels, ", "))
 	fmt.Printf("locals: %s\n", strings.Join(names(a.locals), ", "))
 	fmt.Printf("free: %s\n", strings.Join(a.FreeVariables(), ", "))
+	fmt.Printf("externs: %s\n", strings.Join(names(a.externs), ", "))
 	fmt.Printf("unbound: %s\n", strings.Join(a.MissingBinding(), ", "))
 }
 
@@ -59,8 +62,14 @@ func (a *Analysis) FreeVariables() []string {
 
 	var free []string
 
+	free = append(free, names(a.externs)...)
+
 	for id := range a.identifiers {
-		if !a.parameters[id] && !a.channels[id] && !a.locals[id] {
+		if !u.StringIn(id, free) &&
+			!u.StringIn(id, a.parameters) &&
+			!u.StringIn(id, a.channels) &&
+			!a.locals[id] {
+
 			free = append(free, id)
 		}
 	}
@@ -75,7 +84,7 @@ func (a *Analysis) BoundInAncestor(v string) bool {
 		return false
 	}
 
-	if a.parameters[v] || a.channels[v] || a.locals[v] {
+	if u.StringIn(v, a.parameters) || u.StringIn(v, a.channels) || a.locals[v] {
 		return true
 	}
 
@@ -181,14 +190,15 @@ func (n *Node) FuncAnalysis(parent *Analysis) bool {
 	collector.parent = parent
 	n.analysis = collector
 
-	params := n.children[0].Idents()
-	channels := n.children[1].Idents()
-	body := n.children[2]
+	collector.parameters = n.children[0].Idents()
+	collector.channels = n.children[1].Idents()
+	collector.body = n.children[2]
 
-	addStrings(collector.parameters, params)
-	addStrings(collector.channels, channels)
+	collector.body.ScopeAnalysis(collector)
 
-	body.ScopeAnalysis(collector)
+	for e := range collector.externs {
+		delete(collector.locals, e)
+	}
 
 	return true
 }
@@ -246,6 +256,14 @@ func (n *Node) ScopeAnalysis(collector *Analysis) {
 	}
 
 	n.AssignAnalysis(collector)
+
+	if n.IsToken(token.EXTERN) {
+		for _, child := range n.children {
+			if child.IsToken(token.IDENT) {
+				collector.externs[child.Literal()] = true
+			}
+		}
+	}
 
 	if n.IsToken(token.IDENT) {
 		collector.identifiers[n.Literal()] = true
