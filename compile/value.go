@@ -10,13 +10,27 @@ import (
 
 // Value is a value that is the result of an evaluation.
 type Value struct {
-	isNil       bool
-	isBasicKind bool
-	isFunction  bool
-	basicKind   types.BasicKind
-	basicValue  interface{}
-	function    Function
+	isNil        bool
+	isBasicKind  bool
+	basicKind    types.BasicKind
+	basicValue   interface{}
+	isFunction   bool
+	function     Function
+	isControl    bool
+	controlType  ControlType
+	returnValues []Value
 }
+
+// ControlType indicates kinds of flow-control Values.
+type ControlType byte
+
+// Values for ControlType
+const (
+	ControlNone ControlType = iota
+	ControlReturn
+	ControlBreak
+	ControlContinue
+)
 
 // Function is a evaluatable thing.
 type Function struct {
@@ -25,6 +39,56 @@ type Function struct {
 	locals     []string
 	captured   *Variables
 	body       Evaluator
+}
+
+// BreakValue constructs a ControlBreak Value.
+func BreakValue() []Value {
+	return Values(Value{
+		isControl:   true,
+		controlType: ControlBreak,
+	})
+}
+
+// ContinueValue constructs a ControlContinue Value.
+func ContinueValue() []Value {
+	return Values(Value{
+		isControl:   true,
+		controlType: ControlContinue,
+	})
+}
+
+// ReturnValue constructs a ControlReturn Value.
+func ReturnValue(vals []Value) []Value {
+	return Values(Value{
+		isControl:    true,
+		controlType:  ControlReturn,
+		returnValues: vals,
+	})
+}
+
+// WrappedValues returns the enclosed []Value of the ControlReturn
+func WrappedValues(vals []Value) []Value {
+	return vals[0].returnValues
+}
+
+// IsControlValue returns true if the first Value in the slice is a control return.
+func IsControlValue(vals []Value) bool {
+	return len(vals) > 0 && vals[0].isControl
+}
+
+// IsBreakValue returns true if the first value in the slice is a break value.
+func IsBreakValue(vals []Value) bool {
+	return IsControlValue(vals) && vals[0].controlType == ControlBreak
+}
+
+// IsContinueValue returns true if the first value in the slice is a continue value.
+func IsContinueValue(vals []Value) bool {
+	return IsControlValue(vals) && vals[0].controlType == ControlContinue
+}
+
+// IsReturnValue checks if the first Value in a slice is a ControlReturn.
+func IsReturnValue(vals []Value) bool {
+	return IsControlValue(vals) && vals[0].controlType == ControlReturn
 }
 
 // FunctionValue wraps a Function in a Value.

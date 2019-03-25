@@ -3,6 +3,7 @@ package main
 import (
 	"fmt"
 	"os"
+	"strings"
 
 	"golang.org/x/crypto/ssh/terminal"
 
@@ -38,9 +39,17 @@ func execute(inputName string, input []string) {
 
 	topContext := compile.GlobalScope()
 
-	_, err := repl.Evaluate(inputName, input, topContext)
+	vals, err := repl.Evaluate(inputName, input, topContext)
 
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "%s", err)
+	}
+
+	if len(vals) > 0 {
+		printable := []string{}
+		for _, v := range vals {
+			printable = append(printable, v.String())
+		}
+		fmt.Printf("%s\n", strings.Join(printable, ", "))
 	}
 }

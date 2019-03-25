@@ -52,6 +52,11 @@ func init() {
 		token.NOT:        NotOperator,
 		token.LOG_AND:    LogicalAndOperator,
 		token.LOG_OR:     LogicialOrOperator,
+		token.IF:         ConditionalOperator,
+		token.WHILE:      LoopOperator,
+		token.RETURN:     ReturnOperator,
+		token.BREAK:      BreakOperator,
+		token.CONTINUE:   ContinueOperator,
 	}
 }
 
@@ -126,7 +131,13 @@ func FuncApplication(n *Node) (Evaluator, error) {
 			scope.Set(p, values[i])
 		}
 
-		return f.body(scope)
+		result, err := f.body(scope)
+
+		if IsControlValue(result) {
+			return WrappedValues(result), err
+		}
+
+		return result, err
 	}
 
 	return e, nil
@@ -292,6 +303,10 @@ func StatementsEvaluator(n *Node) (Evaluator, error) {
 				return Values(), err
 			}
 
+			if IsControlValue(r) {
+				return r, nil
+			}
+
 			results = r
 		}
 
@@ -449,7 +464,7 @@ func RightEval(n *Node) (Evaluator, error) {
 	return n.children[1].Evaluator()
 }
 
-// LeftRightEvaluators produces evaluators for a standard binary operation (two child nodes).
+// LeftRightEvaluators produces evaluators for binary operation (two child nodes).
 func LeftRightEvaluators(n *Node) (Evaluator, Evaluator, error) {
 
 	left, err := n.children[0].Evaluator()
@@ -852,6 +867,132 @@ func LogicialOrOperator(n *Node) (Evaluator, error) {
 
 		rightVal, err := StandardSingleEval(n, right, vars)
 		return Values(rightVal), err
+	}
+
+	return e, nil
+}
+
+// LoopOperator handles while ... { ... }
+func LoopOperator(n *Node) (Evaluator, error) {
+
+	cond, body, err := LeftRightEvaluators(n)
+	if err != nil {
+		return nil, err
+	}
+
+	e := func(vars *Variables) ([]Value, error) {
+
+		for {
+
+			condVal, err := StandardSingleEval(n, cond, vars)
+			if err != nil {
+				return Values(condVal), err
+			}
+
+			if !condVal.IsTruthy() {
+				return Values(condVal), nil
+			}
+
+			bodyResults, err := body(vars)
+			if err != nil {
+				return bodyResults, err
+			}
+
+			if IsBreakValue(bodyResults) {
+				return WrappedValues(bodyResults), nil
+			}
+
+			if IsReturnValue(bodyResults) {
+				return bodyResults, nil
+			}
+		}
+	}
+
+	return e, nil
+}
+
+// ReturnOperator wraps values in a ReturnValue.
+func ReturnOperator(n *Node) (Evaluator, error) {
+
+	eval := func(vars *Variables) ([]Value, error) {
+		return Values(), nil
+	}
+	var err error
+	if len(n.children) > 0 {
+		eval, err = n.children[0].Evaluator()
+	}
+	if err != nil {
+		return nil, err
+	}
+
+	e := func(vars *Variables) ([]Value, error) {
+		result, err := eval(vars)
+		return ReturnValue(result), err
+	}
+
+	return e, nil
+}
+
+// BreakOperator returns a BreakValue.
+func BreakOperator(n *Node) (Evaluator, error) {
+
+	return func(vars *Variables) ([]Value, error) {
+		return BreakValue(), nil
+	}, nil
+}
+
+// ContinueOperator returns a ContinueValue.
+func ContinueOperator(n *Node) (Evaluator, error) {
+
+	return func(vars *Variables) ([]Value, error) {
+		return ContinueValue(), nil
+	}, nil
+}
+
+// ConditionalOperator handle if ... { ... } else ...
+func ConditionalOperator(n *Node) (Evaluator, error) {
+
+	// Conditionals looks like
+	// if children[0] { children[1] } else if children[2] { children[3] } else { children[4] }
+	// so a series of if-thens pairs, followed optionally by a single else-child
+
+	var evals []Evaluator
+	for _, child := range n.children {
+
+		one, err := child.Evaluator()
+		if err != nil {
+			return nil, err
+		}
+
+		evals = append(evals, one)
+	}
+
+	e := func(vars *Variables) ([]Value, error) {
+
+		var results []Value
+		var err error
+
+		for i := 0; i < len(evals); i += 2 {
+
+			results, err = evals[i](vars)
+			if i >= len(evals)-1 || err != nil {
+				// either err or final else clause
+				return results, err
+			}
+
+			oneVal, err := SingleValue(n, results)
+			if err != nil {
+				// conditionals should only have 1 value result
+				return results, err
+			}
+
+			if oneVal.IsTruthy() {
+				// found a truthy conditional, evaluate and return the then-clause
+				return evals[i+1](vars)
+			}
+		}
+
+		return results, nil
 	}
 
 	return e, nil
