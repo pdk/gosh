@@ -24,20 +24,34 @@ var nodeEvaluator [token.TransformResultsEnd]evaluatorProducer
 
 func init() {
 	nodeEvaluator = [token.TransformResultsEnd]evaluatorProducer{
-		token.IDENT:     VariableLookup,
-		token.ASSIGN:    AssignValues,
-		token.INT:       IntegerLiteral,
-		token.STRING:    StringLiteral,
-		token.PLUS:      AdditionOperator,
-		token.COMMA:     MultiValueOperator,
-		token.LPAREN:    MultiValueOperator,
-		token.TRUE:      TrueLiteral,
-		token.FALSE:     FalseLiteral,
-		token.NIL:       NilLiteral,
-		token.FUNC:      FuncDefinition,
-		token.FUNCAPPLY: FuncApplication,
-		token.STMTS:     StatementsEvaluator,
-		token.EXTERN:    Noop,
+		token.IDENT:      VariableLookup,
+		token.ASSIGN:     AssignValues,
+		token.INT:        IntegerLiteral,
+		token.FLOAT:      FloatLiteral,
+		token.STRING:     StringLiteral,
+		token.PLUS:       AdditionOperator,
+		token.MINUS:      SubtractionOperator,
+		token.MODULO:     ModuloOperation,
+		token.MULT:       MultiplicationOperator,
+		token.DIV:        DivisionOperator,
+		token.COMMA:      MultiValueOperator,
+		token.LPAREN:     MultiValueOperator,
+		token.TRUE:       TrueLiteral,
+		token.FALSE:      FalseLiteral,
+		token.NIL:        NilLiteral,
+		token.FUNC:       FuncDefinition,
+		token.FUNCAPPLY:  FuncApplication,
+		token.STMTS:      StatementsEvaluator,
+		token.EXTERN:     Noop,
+		token.EQUAL:      EqualOperator,
+		token.NOT_EQUAL:  NotEqualOperator,
+		token.LESS:       LessThanOperator,
+		token.LESS_EQUAL: LessThanEqualOperator,
+		token.GRTR:       GreaterThanOperator,
+		token.GRTR_EQUAL: GreaterThanEqualOperator,
+		token.NOT:        NotOperator,
+		token.LOG_AND:    LogicalAndOperator,
+		token.LOG_OR:     LogicialOrOperator,
 	}
 }
 
@@ -105,7 +119,7 @@ func FuncApplication(n *Node) (Evaluator, error) {
 		}
 
 		for _, l := range f.locals {
-			scope.Set(l, Nil())
+			scope.Set(l, NilValue())
 		}
 
 		for i, p := range f.parameters {
@@ -176,13 +190,7 @@ func NilLiteral(n *Node) (Evaluator, error) {
 func TrueLiteral(n *Node) (Evaluator, error) {
 
 	e := func(vars *Variables) ([]Value, error) {
-		return []Value{
-			Value{
-				isBasicKind: true,
-				basicKind:   types.Bool,
-				basicValue:  true,
-			},
-		}, nil
+		return Values(TrueValue()), nil
 	}
 
 	return e, nil
@@ -192,13 +200,7 @@ func TrueLiteral(n *Node) (Evaluator, error) {
 func FalseLiteral(n *Node) (Evaluator, error) {
 
 	e := func(vars *Variables) ([]Value, error) {
-		return []Value{
-			Value{
-				isBasicKind: true,
-				basicKind:   types.Bool,
-				basicValue:  false,
-			},
-		}, nil
+		return Values(FalseValue()), nil
 	}
 
 	return e, nil
@@ -219,6 +221,28 @@ func IntegerLiteral(n *Node) (Evaluator, error) {
 				isBasicKind: true,
 				basicKind:   types.Int64,
 				basicValue:  i,
+			},
+		}, err
+	}
+
+	return e, nil
+}
+
+// FloatLiteral returns the value of an integer.
+func FloatLiteral(n *Node) (Evaluator, error) {
+
+	f, err := strconv.ParseFloat(n.lexeme.Literal(), 64)
+
+	if err != nil {
+		return nil, n.Error("%s", err)
+	}
+
+	e := func(vars *Variables) ([]Value, error) {
+		return []Value{
+			Value{
+				isBasicKind: true,
+				basicKind:   types.Float64,
+				basicValue:  f,
 			},
 		}, err
 	}
@@ -378,6 +402,43 @@ func AssignValues(n *Node) (Evaluator, error) {
 	return e, nil
 }
 
+// SingleValue checks that we're dealing with a single value.
+func SingleValue(n *Node, vals []Value) (Value, error) {
+
+	if len(vals) == 1 {
+		return vals[0], nil
+	}
+
+	return Value{}, n.Error("expected single value but got %d", len(vals))
+}
+
+// StandardSingleEval evaluates and Evaluator and expects a single result,
+// otherwise returns an error.
+func StandardSingleEval(n *Node, eval Evaluator, vars *Variables) (Value, error) {
+
+	r, err := eval(vars)
+	if err != nil {
+		return Value{}, err
+	}
+
+	return SingleValue(n, r)
+}
+
+// StandardBinaryEval evaluates a left side, then a right side. If either
+// produces an error, or if either does not produce a single value result, then
+// an error is returned.
+func StandardBinaryEval(n *Node, left, right Evaluator, vars *Variables) (Value, Value, error) {
+
+	leftVal, err := StandardSingleEval(n, left, vars)
+	if err != nil {
+		return leftVal, Value{}, err
+	}
+
+	rightVal, err := StandardSingleEval(n, right, vars)
+
+	return leftVal, rightVal, err
+}
+
 // LeftEval returns the evaluator of the first child.
 func LeftEval(n *Node) (Evaluator, error) {
 	return n.children[0].Evaluator()
@@ -388,50 +449,47 @@ func RightEval(n *Node) (Evaluator, error) {
 	return n.children[1].Evaluator()
 }
 
+// LeftRightEvaluators produces evaluators for a standard binary operation (two child nodes).
+func LeftRightEvaluators(n *Node) (Evaluator, Evaluator, error) {
+
+	left, err := n.children[0].Evaluator()
+	if err != nil {
+		return nil, nil, err
+	}
+
+	right, err := n.children[1].Evaluator()
+
+	return left, right, err
+}
+
+// valueEvaluator is to construct a minimal Evaluator when we've already
+// evaluated the result. Don't double-eval an evaluator!
+func valueEvaluator(v Value) Evaluator {
+	return func(vars *Variables) ([]Value, error) {
+		return []Value{v}, nil
+	}
+}
+
 // AdditionOperator returns the value of an addition operation.
 func AdditionOperator(n *Node) (Evaluator, error) {
 
-	left, err := LeftEval(n)
-	if err != nil {
-		return nil, err
-	}
-	right, err := RightEval(n)
+	left, right, err := LeftRightEvaluators(n)
 	if err != nil {
 		return nil, err
 	}
 
 	e := func(vars *Variables) ([]Value, error) {
 
-		r1, err1 := left(vars)
-		if err1 != nil {
-			return Values(), err1
+		leftVal, rightVal, err := StandardBinaryEval(n, left, right, vars)
+		if err != nil {
+			return Values(), err
 		}
 
-		r2, err2 := right(vars)
-		if err2 != nil {
-			return Values(), err2
-		}
+		if leftVal.isBasicKind && leftVal.basicKind == types.String &&
+			rightVal.isBasicKind && rightVal.basicKind == types.String {
 
-		if r1[0].isBasicKind && r1[0].basicKind == types.Int64 &&
-			r2[0].isBasicKind && r2[0].basicKind == types.Int64 {
-
-			i1 := r1[0].basicValue.(int64)
-			i2 := r2[0].basicValue.(int64)
-
-			return []Value{
-				Value{
-					isBasicKind: true,
-					basicKind:   types.Int64,
-					basicValue:  i1 + i2,
-				},
-			}, nil
-		}
-
-		if r1[0].isBasicKind && r1[0].basicKind == types.String &&
-			r2[0].isBasicKind && r2[0].basicKind == types.String {
-
-			s1 := r1[0].basicValue.(string)
-			s2 := r2[0].basicValue.(string)
+			s1 := leftVal.basicValue.(string)
+			s2 := rightVal.basicValue.(string)
 
 			return []Value{
 				Value{
@@ -442,7 +500,358 @@ func AdditionOperator(n *Node) (Evaluator, error) {
 			}, nil
 		}
 
-		return Values(), n.Error("cannot apply + to these types")
+		return BinaryNumericOperation(n, valueEvaluator(leftVal), valueEvaluator(rightVal), vars,
+			func(a, b int64) int64 {
+				return a + b
+			}, func(a, b float64) float64 {
+				return a + b
+			})
+	}
+
+	return e, nil
+}
+
+// BinaryIntOperation evaluates left and right sides, confirms they are int64
+// results, and produces a new result by applying the given function.
+func BinaryIntOperation(n *Node, left, right Evaluator, vars *Variables, op func(int64, int64) int64) ([]Value, error) {
+
+	leftVal, rightVal, err := StandardBinaryEval(n, left, right, vars)
+	if err != nil {
+		return Values(), err
+	}
+
+	if leftVal.isBasicKind && leftVal.basicKind == types.Int64 &&
+		rightVal.isBasicKind && rightVal.basicKind == types.Int64 {
+
+		i1 := leftVal.basicValue.(int64)
+		i2 := rightVal.basicValue.(int64)
+
+		return []Value{
+			Value{
+				isBasicKind: true,
+				basicKind:   types.Int64,
+				basicValue:  op(i1, i2),
+			},
+		}, nil
+	}
+
+	return Values(), n.Error("cannot apply %s to these types", n.Literal())
+}
+
+// BinaryNumericOperation evaluates left and right sides, confirms they are int64
+// results, and produces a new result by applying the given function.
+func BinaryNumericOperation(n *Node, left, right Evaluator, vars *Variables,
+	intOp func(int64, int64) int64,
+	floatOp func(float64, float64) float64) ([]Value, error) {
+
+	leftVal, rightVal, err := StandardBinaryEval(n, left, right, vars)
+	if err != nil {
+		return Values(), err
+	}
+
+	if leftVal.isBasicKind && leftVal.basicKind == types.Int64 &&
+		rightVal.isBasicKind && rightVal.basicKind == types.Int64 {
+
+		i1 := leftVal.basicValue.(int64)
+		i2 := rightVal.basicValue.(int64)
+
+		return []Value{
+			Value{
+				isBasicKind: true,
+				basicKind:   types.Int64,
+				basicValue:  intOp(i1, i2),
+			},
+		}, nil
+	}
+
+	if leftVal.isBasicKind && leftVal.basicKind == types.Float64 &&
+		rightVal.isBasicKind && rightVal.basicKind == types.Float64 {
+
+		f1 := leftVal.basicValue.(float64)
+		f2 := rightVal.basicValue.(float64)
+
+		return []Value{
+			Value{
+				isBasicKind: true,
+				basicKind:   types.Float64,
+				basicValue:  floatOp(f1, f2),
+			},
+		}, nil
+	}
+
+	return Values(), n.Error("cannot apply %s to these types", n.Literal())
+}
+
+// SubtractionOperator returns the value of an addition operation.
+func SubtractionOperator(n *Node) (Evaluator, error) {
+
+	if len(n.children) == 1 {
+		return NegativeOperation(n)
+	}
+
+	left, right, err := LeftRightEvaluators(n)
+	if err != nil {
+		return nil, err
+	}
+
+	e := func(vars *Variables) ([]Value, error) {
+
+		return BinaryNumericOperation(n, left, right, vars, func(a, b int64) int64 {
+			return a - b
+		}, func(a, b float64) float64 {
+			return a - b
+		})
+	}
+
+	return e, nil
+}
+
+// MultiplicationOperator returns the value of an addition operation.
+func MultiplicationOperator(n *Node) (Evaluator, error) {
+
+	left, right, err := LeftRightEvaluators(n)
+	if err != nil {
+		return nil, err
+	}
+
+	e := func(vars *Variables) ([]Value, error) {
+
+		return BinaryNumericOperation(n, left, right, vars, func(a, b int64) int64 {
+			return a * b
+		}, func(a, b float64) float64 {
+			return a * b
+		})
+	}
+
+	return e, nil
+}
+
+// DivisionOperator returns the value of an addition operation.
+func DivisionOperator(n *Node) (Evaluator, error) {
+
+	left, right, err := LeftRightEvaluators(n)
+	if err != nil {
+		return nil, err
+	}
+
+	e := func(vars *Variables) ([]Value, error) {
+
+		return BinaryNumericOperation(n, left, right, vars, func(a, b int64) int64 {
+			return a / b
+		}, func(a, b float64) float64 {
+			return a / b
+		})
+
+	}
+
+	return e, nil
+}
+
+// ModuloOperation returns the value of an addition operation.
+func ModuloOperation(n *Node) (Evaluator, error) {
+
+	left, right, err := LeftRightEvaluators(n)
+	if err != nil {
+		return nil, err
+	}
+
+	e := func(vars *Variables) ([]Value, error) {
+
+		return BinaryIntOperation(n, left, right, vars, func(a, b int64) int64 {
+			return a % b
+		})
+	}
+
+	return e, nil
+}
+
+// NegativeOperation handles unary -, return the negative of the value.
+func NegativeOperation(n *Node) (Evaluator, error) {
+
+	operand, err := n.children[0].Evaluator()
+	if err != nil {
+		return nil, err
+	}
+
+	e := func(vars *Variables) ([]Value, error) {
+
+		result, err := operand(vars)
+		if err != nil {
+			return Values(), err
+		}
+
+		val, err := SingleValue(n, result)
+		if err != nil {
+			return Values(), err
+		}
+
+		if val.isBasicKind && val.basicKind == types.Int64 {
+
+			i := val.basicValue.(int64)
+
+			return []Value{
+				Value{
+					isBasicKind: true,
+					basicKind:   types.Int64,
+					basicValue:  -1 * i,
+				},
+			}, nil
+		}
+
+		if val.isBasicKind && val.basicKind == types.Float64 {
+
+			f := val.basicValue.(float64)
+
+			return []Value{
+				Value{
+					isBasicKind: true,
+					basicKind:   types.Float64,
+					basicValue:  -f,
+				},
+			}, nil
+		}
+
+		return Values(), n.Error("cannot apply - (negative) to this type")
+	}
+
+	return e, nil
+}
+
+// ComparisonOperator applies the given comparison.
+func ComparisonOperator(n *Node, comp func(Value, Value) (bool, error)) (Evaluator, error) {
+
+	left, right, err := LeftRightEvaluators(n)
+	if err != nil {
+		return nil, err
+	}
+
+	e := func(vars *Variables) ([]Value, error) {
+
+		leftVal, rightVal, err := StandardBinaryEval(n, left, right, vars)
+		if err != nil {
+			return Values(), err
+		}
+
+		isTrue, err := comp(leftVal, rightVal)
+
+		if err != nil {
+			return Values(), n.Error("%s", err)
+		}
+
+		if isTrue {
+			return Values(TrueValue()), nil
+		}
+
+		return Values(FalseValue()), nil
+	}
+
+	return e, nil
+}
+
+// EqualOperator checks equality.
+func EqualOperator(n *Node) (Evaluator, error) {
+	return ComparisonOperator(n, EqualValues)
+}
+
+// NotEqualOperator checks inequality.
+func NotEqualOperator(n *Node) (Evaluator, error) {
+	return ComparisonOperator(n, NotEqualValues)
+}
+
+// LessThanOperator checks less than.
+func LessThanOperator(n *Node) (Evaluator, error) {
+	return ComparisonOperator(n, LessThanValue)
+}
+
+// LessThanEqualOperator checks greater than.
+func LessThanEqualOperator(n *Node) (Evaluator, error) {
+	return ComparisonOperator(n, LessThanEqualValue)
+}
+
+// GreaterThanOperator checks less than.
+func GreaterThanOperator(n *Node) (Evaluator, error) {
+	return ComparisonOperator(n, GreaterThanValue)
+}
+
+// GreaterThanEqualOperator checks greater than.
+func GreaterThanEqualOperator(n *Node) (Evaluator, error) {
+	return ComparisonOperator(n, GreaterThanEqualValue)
+}
+
+// NotOperator evaluate logical !
+func NotOperator(n *Node) (Evaluator, error) {
+
+	operand, err := n.children[0].Evaluator()
+	if err != nil {
+		return nil, err
+	}
+
+	e := func(vars *Variables) ([]Value, error) {
+
+		val, err := StandardSingleEval(n, operand, vars)
+		if err != nil {
+			return Values(), err
+		}
+
+		if val.IsTruthy() {
+			return Values(TrueValue()), nil
+		}
+
+		return Values(FalseValue()), nil
+	}
+
+	return e, nil
+}
+
+// LogicalAndOperator handles ... && ...
+func LogicalAndOperator(n *Node) (Evaluator, error) {
+
+	left, right, err := LeftRightEvaluators(n)
+	if err != nil {
+		return nil, err
+	}
+
+	e := func(vars *Variables) ([]Value, error) {
+
+		leftVal, err := StandardSingleEval(n, left, vars)
+		if err != nil {
+			return Values(leftVal), err
+		}
+
+		if !leftVal.IsTruthy() {
+			// short-circuit return on False
+			return Values(leftVal), nil
+		}
+
+		rightVal, err := StandardSingleEval(n, right, vars)
+		return Values(rightVal), err
+	}
+
+	return e, nil
+}
+
+// LogicialOrOperator handles ... || ...
+func LogicialOrOperator(n *Node) (Evaluator, error) {
+
+	left, right, err := LeftRightEvaluators(n)
+	if err != nil {
+		return nil, err
+	}
+
+	e := func(vars *Variables) ([]Value, error) {
+
+		leftVal, err := StandardSingleEval(n, left, vars)
+		if err != nil {
+			return Values(leftVal), err
+		}
+
+		if leftVal.IsTruthy() {
+			// short-circuit return on True
+			return Values(leftVal), nil
+		}
+
+		rightVal, err := StandardSingleEval(n, right, vars)
+		return Values(rightVal), err
 	}
 
 	return e, nil

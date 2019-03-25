@@ -47,7 +47,7 @@ func (v *Variables) Reference(name string) (*Value, error) {
 func (v *Variables) Value(name string) (Value, error) {
 
 	if v == nil {
-		return Nil(), fmt.Errorf("attempt to access undefined variable %s", name)
+		return NilValue(), fmt.Errorf("attempt to access undefined variable %s", name)
 	}
 
 	val, ok := v.values[name]
@@ -79,7 +79,7 @@ func (v *Variables) Set(name string, val Value) (Value, error) {
 	}
 
 	if cur.isBasicKind != val.isBasicKind || cur.basicKind != val.basicKind {
-		return Nil(), fmt.Errorf("attempt to convert variable %s from type %d to type %d", name, cur.basicKind, val.basicKind)
+		return NilValue(), fmt.Errorf("attempt to convert variable %s from type %d to type %d", name, cur.basicKind, val.basicKind)
 	}
 
 	v.values[name].Set(val)

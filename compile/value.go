@@ -69,17 +69,192 @@ func (v Value) String() string {
 		return "false"
 	case types.Int64:
 		return strconv.FormatInt(v.basicValue.(int64), 10)
+	case types.Float64:
+		return strconv.FormatFloat(v.basicValue.(float64), 'f', -1, 64)
 	default:
 		return fmt.Sprintf("%s", v.basicValue)
 	}
 }
 
-// Nil returns a nil Value.
-func Nil() Value {
+// NilValue returns a nil Value.
+func NilValue() Value {
 	return Value{
 		isNil:       true,
 		isBasicKind: true,
 		basicKind:   types.UntypedNil,
 		basicValue:  nil,
 	}
+}
+
+// TrueValue returns a true Value.
+func TrueValue() Value {
+
+	return Value{
+		isBasicKind: true,
+		basicKind:   types.Bool,
+		basicValue:  true,
+	}
+}
+
+// IsTruthy returns true if the value is boolean and true, or if it is non-nil.
+func (v Value) IsTruthy() bool {
+
+	if v.isNil {
+		return false
+	}
+
+	if v.isBasicKind && v.basicKind == types.Bool {
+		return v.basicValue.(bool)
+	}
+
+	return true
+}
+
+// FalseValue returns a false Value.
+func FalseValue() Value {
+
+	return Value{
+		isBasicKind: true,
+		basicKind:   types.Bool,
+		basicValue:  false,
+	}
+}
+
+// EqualValues returns true/false if the two values are equal. If they are of
+// different types, return an error.
+func EqualValues(left, right Value) (bool, error) {
+
+	if left.basicKind == types.Bool && right.basicKind == types.Bool {
+		return left.basicValue.(bool) == right.basicValue.(bool), nil
+	}
+
+	_, err := checkCompareKinds(left, right)
+	if err != nil {
+		return false, err
+	}
+
+	return left.basicValue == right.basicValue, nil
+}
+
+// NotEqualValues returns true/false if the two values are not equal. If they are of
+// different types, return an error.
+func NotEqualValues(left, right Value) (bool, error) {
+
+	if left.basicKind == types.Bool && right.basicKind == types.Bool {
+		return left.basicValue.(bool) != right.basicValue.(bool), nil
+	}
+
+	_, err := checkCompareKinds(left, right)
+	if err != nil {
+		return false, err
+	}
+
+	return left.basicValue != right.basicValue, nil
+}
+
+// LessThanEqualValue returns true/false and/or an error.
+func LessThanEqualValue(left, right Value) (bool, error) {
+
+	t, err := checkCompareKinds(left, right)
+	if err != nil {
+		return false, err
+	}
+
+	l, r := left.basicValue, right.basicValue
+
+	switch t {
+	case types.Int64:
+		return l.(int64) <= r.(int64), nil
+	case types.Float64:
+		return l.(float64) <= r.(float64), nil
+	case types.String:
+		return l.(string) <= r.(string), nil
+	}
+
+	panic("invalid value comparison")
+}
+
+// GreaterThanEqualValue returns true/false and/or an error.
+func GreaterThanEqualValue(left, right Value) (bool, error) {
+
+	t, err := checkCompareKinds(left, right)
+	if err != nil {
+		return false, err
+	}
+
+	l, r := left.basicValue, right.basicValue
+
+	switch t {
+	case types.Int64:
+		return l.(int64) >= r.(int64), nil
+	case types.Float64:
+		return l.(float64) >= r.(float64), nil
+	case types.String:
+		return l.(string) >= r.(string), nil
+	}
+
+	panic("invalid value comparison")
+}
+
+// GreaterThanValue returns true/false and/or an error.
+func GreaterThanValue(left, right Value) (bool, error) {
+
+	t, err := checkCompareKinds(left, right)
+	if err != nil {
+		return false, err
+	}
+
+	l, r := left.basicValue, right.basicValue
+
+	switch t {
+	case types.Int64:
+		return l.(int64) > r.(int64), nil
+	case types.Float64:
+		return l.(float64) > r.(float64), nil
+	case types.String:
+		return l.(string) > r.(string), nil
+	}
+
+	panic("invalid value comparison")
+}
+
+// LessThanValue returns true/false and/or an error.
+func LessThanValue(left, right Value) (bool, error) {
+
+	t, err := checkCompareKinds(left, right)
+	if err != nil {
+		return false, err
+	}
+
+	l, r := left.basicValue, right.basicValue
+
+	switch t {
+	case types.Int64:
+		return l.(int64) < r.(int64), nil
+	case types.Float64:
+		return l.(float64) < r.(float64), nil
+	case types.String:
+		return l.(string) < r.(string), nil
+	}
+
+	panic("invalid value comparison")
+}
+
+// checkCompareKinds checks if the two operands are types that can be compared.
+// Returns the type if so, and error if no.
+func checkCompareKinds(left, right Value) (types.BasicKind, error) {
+
+	if left.basicKind != right.basicKind {
+		return types.UntypedNil, fmt.Errorf("cannot compare values of different types")
+	}
+
+	t := left.basicKind
+	if t != types.Int64 &&
+		t != types.Float64 &&
+		t != types.String {
+		// we only know how to compare those types
+		return types.UntypedNil, fmt.Errorf("don't know how to compare those types")
+	}
+
+	return t, nil
 }
