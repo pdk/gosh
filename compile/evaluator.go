@@ -809,10 +809,10 @@ func NotOperator(n *Node) (Evaluator, error) {
 		}
 
 		if val.IsTruthy() {
-			return Values(TrueValue()), nil
+			return Values(FalseValue()), nil
 		}
 
-		return Values(FalseValue()), nil
+		return Values(TrueValue()), nil
 	}
 
 	return e, nil
