@@ -137,6 +137,15 @@ func (n *Node) Error(mesg string, args ...interface{}) error {
 	return n.lexeme.Error(mesg, args...)
 }
 
+// IfError returns nil if err == nil, otherwise returns a non-nil error.
+func (n *Node) IfError(err error, mesg string, args ...interface{}) error {
+	if err == nil {
+		return nil
+	}
+
+	return n.Error(mesg, args...)
+}
+
 // Token returns the token of the lexeme of the node.
 func (n *Node) Token() token.Token {
 	return n.lexeme.Token()

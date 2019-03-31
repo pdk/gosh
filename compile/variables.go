@@ -2,6 +2,7 @@ package compile
 
 import (
 	"fmt"
+	"reflect"
 )
 
 // Variables is a standard value-by-name store.
@@ -47,7 +48,7 @@ func (v *Variables) Reference(name string) (*Value, error) {
 func (v *Variables) Value(name string) (Value, error) {
 
 	if v == nil {
-		return NilValue(), fmt.Errorf("attempt to access undefined variable %s", name)
+		return nil, fmt.Errorf("attempt to access undefined variable %s", name)
 	}
 
 	val, ok := v.values[name]
@@ -68,22 +69,17 @@ func (v *Variables) Set(name string, val Value) (Value, error) {
 
 	cur, ok := v.values[name]
 
-	if !ok {
+	if !ok || *cur == nil {
 		v.values[name] = &val
 		return val, nil
 	}
 
-	if cur.IsNil() {
-		v.values[name] = &val
-		return val, nil
+	if reflect.TypeOf(*cur) != reflect.TypeOf(val) {
+		return val, fmt.Errorf("attempt to convert variable %s from type %T to type %T",
+			name, *cur, val)
 	}
 
-	if cur.TypeOf() != val.TypeOf() {
-		return NilValue(), fmt.Errorf("attempt to convert variable %s from type %s to type %s",
-			name, cur.TypeOf().Name(), val.TypeOf().Name())
-	}
+	*cur = val
 
-	v.values[name].Set(val)
-
-	return *v.values[name], nil
+	return val, nil
 }

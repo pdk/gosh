@@ -48,7 +48,7 @@ func execute(inputName string, input []string) {
 	if len(vals) > 0 {
 		printable := []string{}
 		for _, v := range vals {
-			printable = append(printable, v.String())
+			printable = append(printable, compile.ToString(v))
 		}
 		fmt.Printf("%s\n", strings.Join(printable, ", "))
 	}

@@ -92,11 +92,14 @@ func FuncApplication(n *Node) (Evaluator, error) {
 			return Values(), n.Error("unable to resolve function: %s", err)
 		}
 
-		if len(fr) != 1 || !fr[0].IsFunction() {
-			return Values(), n.Error("cannot apply a non-function")
+		if len(fr) != 1 {
+			return Values(), n.Error("cannot apply multiple values as a function")
 		}
 
-		f := fr[0].Function()
+		f, ok := fr[0].(Function)
+		if !ok {
+			return Values(), n.Error("cannot apply a non-function")
+		}
 
 		var values []Value
 		for _, eachEval := range paramEvals {
@@ -118,7 +121,7 @@ func FuncApplication(n *Node) (Evaluator, error) {
 		}
 
 		for _, l := range f.locals {
-			scope.Set(l, NilValue())
+			scope.Set(l, nil)
 		}
 
 		for i, p := range f.parameters {
@@ -181,11 +184,7 @@ func Noop(n *Node) (Evaluator, error) {
 func NilLiteral(n *Node) (Evaluator, error) {
 
 	e := func(vars *Variables) ([]Value, error) {
-		return []Value{
-			Value{
-				value: nil,
-			},
-		}, nil
+		return Values(nil), nil
 	}
 
 	return e, nil
@@ -195,7 +194,7 @@ func NilLiteral(n *Node) (Evaluator, error) {
 func TrueLiteral(n *Node) (Evaluator, error) {
 
 	e := func(vars *Variables) ([]Value, error) {
-		return Values(TrueValue()), nil
+		return Values(true), nil
 	}
 
 	return e, nil
@@ -205,7 +204,7 @@ func TrueLiteral(n *Node) (Evaluator, error) {
 func FalseLiteral(n *Node) (Evaluator, error) {
 
 	e := func(vars *Variables) ([]Value, error) {
-		return Values(FalseValue()), nil
+		return Values(false), nil
 	}
 
 	return e, nil
@@ -221,11 +220,7 @@ func IntegerLiteral(n *Node) (Evaluator, error) {
 	}
 
 	e := func(vars *Variables) ([]Value, error) {
-		return []Value{
-			Value{
-				value: i,
-			},
-		}, err
+		return Values(i), nil
 	}
 
 	return e, nil
@@ -404,7 +399,7 @@ func SingleValue(n *Node, vals []Value) (Value, error) {
 		return vals[0], nil
 	}
 
-	return Value{}, n.Error("expected single value but got %d", len(vals))
+	return Values(), n.Error("expected single value but got %d", len(vals))
 }
 
 // StandardSingleEval evaluates and Evaluator and expects a single result,
@@ -413,7 +408,7 @@ func StandardSingleEval(n *Node, eval Evaluator, vars *Variables) (Value, error)
 
 	r, err := eval(vars)
 	if err != nil {
-		return Value{}, err
+		return nil, err
 	}
 
 	return SingleValue(n, r)
@@ -426,7 +421,7 @@ func StandardBinaryEval(n *Node, left, right Evaluator, vars *Variables) (Value,
 
 	leftVal, err := StandardSingleEval(n, left, vars)
 	if err != nil {
-		return leftVal, Value{}, err
+		return leftVal, nil, err
 	}
 
 	rightVal, err := StandardSingleEval(n, right, vars)
@@ -480,16 +475,11 @@ func AdditionOperator(n *Node) (Evaluator, error) {
 			return Values(), err
 		}
 
-		if leftVal.IsString() && rightVal.IsString() {
-
-			s1 := leftVal.String()
-			s2 := rightVal.String()
-
-			return []Value{
-				Value{
-					value: s1 + s2,
-				},
-			}, nil
+		r, ok := TryBinaryStringOp(leftVal, rightVal, func(s1, s2 string) string {
+			return s1 + s2
+		})
+		if ok {
+			return Values(r), nil
 		}
 
 		return BinaryNumericOperation(n, valueEvaluator(leftVal), valueEvaluator(rightVal), vars,
@@ -503,6 +493,57 @@ func AdditionOperator(n *Node) (Evaluator, error) {
 	return e, nil
 }
 
+// TryBinaryStringOp checks if the two values are strings, and then applies the
+// op if so. Returns false if either value is not a string.
+func TryBinaryStringOp(left, right Value, op func(string, string) string) (string, bool) {
+
+	lStr, ok := left.(string)
+	if !ok {
+		return "", false
+	}
+
+	rStr, ok := right.(string)
+	if !ok {
+		return "", false
+	}
+
+	return op(lStr, rStr), true
+}
+
+// TryBinaryInt64Op checks if the two values are int64s, and then applies the
+// op if so. Returns false if either value is not an int64.
+func TryBinaryInt64Op(left, right Value, op func(int64, int64) int64) (int64, bool) {
+
+	lInt, ok := left.(int64)
+	if !ok {
+		return 0, false
+	}
+
+	rInt, ok := right.(int64)
+	if !ok {
+		return 0, false
+	}
+
+	return op(lInt, rInt), true
+}
+
+// TryBinaryFloat64Op checks if the two values are float64s, and then applies the
+// op if so. Returns false if either value is not a float64.
+func TryBinaryFloat64Op(left, right Value, op func(float64, float64) float64) (float64, bool) {
+
+	lFloat, ok := left.(float64)
+	if !ok {
+		return 0, false
+	}
+
+	rFloat, ok := right.(float64)
+	if !ok {
+		return 0, false
+	}
+
+	return op(lFloat, rFloat), true
+}
+
 // BinaryIntOperation evaluates left and right sides, confirms they are int64
 // results, and produces a new result by applying the given function.
 func BinaryIntOperation(n *Node, left, right Evaluator, vars *Variables, op func(int64, int64) int64) ([]Value, error) {
@@ -512,16 +553,13 @@ func BinaryIntOperation(n *Node, left, right Evaluator, vars *Variables, op func
 		return Values(), err
 	}
 
-	if leftVal.IsInt64() && rightVal.IsInt64() {
-
-		i1 := leftVal.Int64()
-		i2 := rightVal.Int64()
-
-		return Values(op(i1, i2)), nil
+	r, ok := TryBinaryInt64Op(leftVal, rightVal, op)
+	if ok {
+		return Values(r), nil
 	}
 
-	return Values(), n.Error("cannot apply %s to %s and %s",
-		n.Literal(), leftVal.TypeOf().Name(), rightVal.TypeOf().Name())
+	return Values(), n.Error("cannot apply %s to %T and %T",
+		n.Literal(), leftVal, rightVal)
 }
 
 // BinaryNumericOperation evaluates left and right sides, confirms they are int64
@@ -535,24 +573,18 @@ func BinaryNumericOperation(n *Node, left, right Evaluator, vars *Variables,
 		return Values(), err
 	}
 
-	if leftVal.IsInt64() && rightVal.IsInt64() {
-
-		i1 := leftVal.Int64()
-		i2 := rightVal.Int64()
-
-		return Values(intOp(i1, i2)), nil
+	r, ok := TryBinaryInt64Op(leftVal, rightVal, intOp)
+	if ok {
+		return Values(r), nil
 	}
 
-	if leftVal.IsFloat64() && rightVal.IsFloat64() {
-
-		f1 := leftVal.Float64()
-		f2 := rightVal.Float64()
-
-		return Values(floatOp(f1, f2)), nil
+	r2, ok := TryBinaryFloat64Op(leftVal, rightVal, floatOp)
+	if ok {
+		return Values(r2), nil
 	}
 
-	return Values(), n.Error("cannot apply %s to %s and %s",
-		n.Literal(), leftVal.TypeOf().Name(), rightVal.TypeOf().Name())
+	return Values(), n.Error("cannot apply %s to %T and %T",
+		n.Literal(), leftVal, rightVal)
 }
 
 // SubtractionOperator returns the value of an addition operation.
@@ -658,15 +690,14 @@ func NegativeOperation(n *Node) (Evaluator, error) {
 			return Values(), err
 		}
 
-		if val.IsInt64() {
-			return Values(-val.Int64()), nil
+		switch v := val.(type) {
+		case int64:
+			return Values(-v), nil
+		case float64:
+			return Values(-v), nil
 		}
 
-		if val.IsFloat64() {
-			return Values(-val.Float64()), nil
-		}
-
-		return Values(), n.Error("cannot apply - (negative) to %s", val.TypeOf().Name())
+		return Values(), n.Error("cannot apply - (negative) to %T", val)
 	}
 
 	return e, nil
@@ -687,17 +718,9 @@ func ComparisonOperator(n *Node, comp func(Value, Value) (bool, error)) (Evaluat
 			return Values(), err
 		}
 
-		isTrue, err := comp(leftVal, rightVal)
+		result, err := comp(leftVal, rightVal)
 
-		if err != nil {
-			return Values(), n.Error("%s", err)
-		}
-
-		if isTrue {
-			return Values(TrueValue()), nil
-		}
-
-		return Values(FalseValue()), nil
+		return Values(result), n.IfError(err, "%s", err)
 	}
 
 	return e, nil
@@ -748,11 +771,7 @@ func NotOperator(n *Node) (Evaluator, error) {
 			return Values(), err
 		}
 
-		if val.IsTruthy() {
-			return Values(FalseValue()), nil
-		}
-
-		return Values(TrueValue()), nil
+		return Values(!IsTruthy(val)), nil
 	}
 
 	return e, nil
@@ -773,7 +792,7 @@ func LogicalAndOperator(n *Node) (Evaluator, error) {
 			return Values(leftVal), err
 		}
 
-		if !leftVal.IsTruthy() {
+		if !IsTruthy(leftVal) {
 			// short-circuit return on False
 			return Values(leftVal), nil
 		}
@@ -800,7 +819,7 @@ func LogicialOrOperator(n *Node) (Evaluator, error) {
 			return Values(leftVal), err
 		}
 
-		if leftVal.IsTruthy() {
+		if IsTruthy(leftVal) {
 			// short-circuit return on True
 			return Values(leftVal), nil
 		}
@@ -829,7 +848,7 @@ func LoopOperator(n *Node) (Evaluator, error) {
 				return Values(condVal), err
 			}
 
-			if !condVal.IsTruthy() {
+			if !IsTruthy(condVal) {
 				return Values(condVal), nil
 			}
 
@@ -926,7 +945,7 @@ func ConditionalOperator(n *Node) (Evaluator, error) {
 				return results, err
 			}
 
-			if oneVal.IsTruthy() {
+			if IsTruthy(oneVal) {
 				// found a truthy conditional, evaluate and return the then-clause
 				return evals[i+1](vars)
 			}
