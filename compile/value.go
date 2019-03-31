@@ -5,20 +5,34 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/golang/go/src/go/types"
+	"reflect"
 )
 
 // Value is a value that is the result of an evaluation.
 type Value struct {
-	isNil        bool
-	isBasicKind  bool
-	basicKind    types.BasicKind
-	basicValue   interface{}
-	isFunction   bool
-	function     Function
-	isControl    bool
-	controlType  ControlType
-	returnValues []Value
+	value interface{}
+}
+
+// Values wraps particular values in a []Value.
+func Values(vals ...interface{}) []Value {
+
+	var r []Value
+
+	for _, v := range vals {
+		x, ok := v.(Value)
+		if ok {
+			r = append(r, x)
+			continue
+		}
+		r = append(r, Value{value: v})
+	}
+
+	return r
+}
+
+// TypeOf returns the reflect.Type of the value.
+func (v Value) TypeOf() reflect.Type {
+	return reflect.TypeOf(v.value)
 }
 
 // ControlType indicates kinds of flow-control Values.
@@ -32,6 +46,13 @@ const (
 	ControlContinue
 )
 
+// ControlValue is a Value which is returned to indicate some flow-of-control
+// change.
+type ControlValue struct {
+	which        ControlType
+	returnValues []Value
+}
+
 // Function is a evaluatable thing.
 type Function struct {
 	parameters []string
@@ -41,134 +62,172 @@ type Function struct {
 	body       Evaluator
 }
 
+// IsNil returns true if the value is nil.
+func (v Value) IsNil() bool {
+	return v.value == nil
+}
+
+// IsBool returns true if the value is a bool.
+func (v Value) IsBool() bool {
+	return v.TypeOf().Kind() == reflect.Bool
+}
+
+// Bool returns the value as a bool. Will panic if value is not a bool.
+func (v Value) Bool() bool {
+	return v.value.(bool)
+}
+
+// IsString returns true if the value is a string.
+func (v Value) IsString() bool {
+	return v.TypeOf().Kind() == reflect.String
+}
+
+// AsString returns the value as a string. Will panic if underlying value is not
+// a string.
+func (v Value) AsString() string {
+	return v.value.(string)
+}
+
+// IsInt64 returns true if the value is an int64.
+func (v Value) IsInt64() bool {
+	return v.TypeOf().Kind() == reflect.Int64
+}
+
+// Int64 returns the value as an int64. Will panic if value is not int64.
+func (v Value) Int64() int64 {
+	return v.value.(int64)
+}
+
+// IsFloat64 returns true if the value is an float64.
+func (v Value) IsFloat64() bool {
+	return v.TypeOf().Kind() == reflect.Float64
+}
+
+// Float64 returns the value as an float64. Will panic if value is not float64.
+func (v Value) Float64() float64 {
+	return v.value.(float64)
+}
+
+// IsFunction returns true if the value is a Function.
+func (v Value) IsFunction() bool {
+	return v.TypeOf() == reflect.TypeOf(Function{})
+}
+
+// Function returns the value as a Function. Program will panic if called on non-Function.
+func (v Value) Function() Function {
+	return v.value.(Function)
+}
+
 // BreakValue constructs a ControlBreak Value.
 func BreakValue() []Value {
-	return Values(Value{
-		isControl:   true,
-		controlType: ControlBreak,
+	return Values(ControlValue{
+		which: ControlBreak,
 	})
 }
 
 // ContinueValue constructs a ControlContinue Value.
 func ContinueValue() []Value {
-	return Values(Value{
-		isControl:   true,
-		controlType: ControlContinue,
-	})
+	return Values(ControlValue{which: ControlContinue})
 }
 
 // ReturnValue constructs a ControlReturn Value.
 func ReturnValue(vals []Value) []Value {
-	return Values(Value{
-		isControl:    true,
-		controlType:  ControlReturn,
-		returnValues: vals,
-	})
+	return Values(
+		ControlValue{
+			which:        ControlReturn,
+			returnValues: vals,
+		},
+	)
+}
+
+// ControlValue returns the value as a ControlValue. Will panic if not actually a ControlValue.
+func (v Value) ControlValue() ControlValue {
+	return v.value.(ControlValue)
 }
 
 // WrappedValues returns the enclosed []Value of the ControlReturn
 func WrappedValues(vals []Value) []Value {
-	return vals[0].returnValues
+	return vals[0].ControlValue().returnValues
 }
 
-// IsControlValue returns true if the first Value in the slice is a control return.
+// IsControlValue returns true if values has 1 value, and it is a ControlValue.
 func IsControlValue(vals []Value) bool {
-	return len(vals) > 0 && vals[0].isControl
+
+	if len(vals) != 1 {
+		return false
+	}
+
+	_, ok := vals[0].value.(ControlValue)
+
+	return ok
 }
 
 // IsBreakValue returns true if the first value in the slice is a break value.
 func IsBreakValue(vals []Value) bool {
-	return IsControlValue(vals) && vals[0].controlType == ControlBreak
+	return IsControlValue(vals) && vals[0].ControlValue().which == ControlBreak
 }
 
 // IsContinueValue returns true if the first value in the slice is a continue value.
 func IsContinueValue(vals []Value) bool {
-	return IsControlValue(vals) && vals[0].controlType == ControlContinue
+	return IsControlValue(vals) && vals[0].ControlValue().which == ControlContinue
 }
 
 // IsReturnValue checks if the first Value in a slice is a ControlReturn.
 func IsReturnValue(vals []Value) bool {
-	return IsControlValue(vals) && vals[0].controlType == ControlReturn
-}
-
-// FunctionValue wraps a Function in a Value.
-func FunctionValue(f Function) Value {
-	return Value{
-		isFunction: true,
-		function:   f,
-	}
+	return IsControlValue(vals) && vals[0].ControlValue().which == ControlReturn
 }
 
 // Set overwrites the value of a value from another value.
 func (v *Value) Set(from Value) {
-	v.isNil = from.isNil
-	v.isBasicKind = from.isBasicKind
-	v.isFunction = from.isFunction
-	v.basicKind = from.basicKind
-	v.basicValue = from.basicValue
-	v.function = from.function
+	v.value = from.value
 }
 
 func (v Value) String() string {
 
-	if v.isNil {
+	if v.IsNil() {
 		return "nil"
 	}
 
-	if v.isFunction {
+	if v.IsFunction() {
 		return fmt.Sprintf("func(%s)[%s]{...}",
-			strings.Join(v.function.parameters, ", "),
-			strings.Join(v.function.channels, ", "))
+			strings.Join(v.Function().parameters, ", "),
+			strings.Join(v.Function().channels, ", "))
 	}
 
-	if !v.isBasicKind {
-		return "*unprintable*"
-	}
-
-	switch v.basicKind {
-	case types.Bool:
-		if v.basicValue.(bool) {
+	switch v.TypeOf().Kind() {
+	case reflect.Bool:
+		if v.value.(bool) {
 			return "true"
 		}
 		return "false"
-	case types.Int64:
-		return strconv.FormatInt(v.basicValue.(int64), 10)
-	case types.Float64:
-		return strconv.FormatFloat(v.basicValue.(float64), 'f', -1, 64)
+	case reflect.Int64:
+		return strconv.FormatInt(v.Int64(), 10)
+	case reflect.Float64:
+		return strconv.FormatFloat(v.Float64(), 'f', -1, 64)
 	default:
-		return fmt.Sprintf("%s", v.basicValue)
+		return fmt.Sprintf("%s", v.value)
 	}
 }
 
 // NilValue returns a nil Value.
 func NilValue() Value {
-	return Value{
-		isNil:       true,
-		isBasicKind: true,
-		basicKind:   types.UntypedNil,
-		basicValue:  nil,
-	}
+	return Value{value: nil}
 }
 
 // TrueValue returns a true Value.
 func TrueValue() Value {
-
-	return Value{
-		isBasicKind: true,
-		basicKind:   types.Bool,
-		basicValue:  true,
-	}
+	return Value{value: true}
 }
 
 // IsTruthy returns true if the value is boolean and true, or if it is non-nil.
 func (v Value) IsTruthy() bool {
 
-	if v.isNil {
+	if v.IsNil() {
 		return false
 	}
 
-	if v.isBasicKind && v.basicKind == types.Bool {
-		return v.basicValue.(bool)
+	if v.IsBool() {
+		return v.Bool()
 	}
 
 	return true
@@ -176,44 +235,27 @@ func (v Value) IsTruthy() bool {
 
 // FalseValue returns a false Value.
 func FalseValue() Value {
-
-	return Value{
-		isBasicKind: true,
-		basicKind:   types.Bool,
-		basicValue:  false,
-	}
+	return Value{value: false}
 }
 
 // EqualValues returns true/false if the two values are equal. If they are of
 // different types, return an error.
 func EqualValues(left, right Value) (bool, error) {
 
-	if left.basicKind == types.Bool && right.basicKind == types.Bool {
-		return left.basicValue.(bool) == right.basicValue.(bool), nil
+	if left.TypeOf().Kind() != right.TypeOf().Kind() {
+		return false, fmt.Errorf("cannot compare values of different types")
 	}
 
-	_, err := checkCompareKinds(left, right)
-	if err != nil {
-		return false, err
-	}
-
-	return left.basicValue == right.basicValue, nil
+	return left.value == right.value, nil
 }
 
 // NotEqualValues returns true/false if the two values are not equal. If they are of
 // different types, return an error.
 func NotEqualValues(left, right Value) (bool, error) {
 
-	if left.basicKind == types.Bool && right.basicKind == types.Bool {
-		return left.basicValue.(bool) != right.basicValue.(bool), nil
-	}
+	r, err := EqualValues(left, right)
 
-	_, err := checkCompareKinds(left, right)
-	if err != nil {
-		return false, err
-	}
-
-	return left.basicValue != right.basicValue, nil
+	return !r, err
 }
 
 // LessThanEqualValue returns true/false and/or an error.
@@ -224,14 +266,14 @@ func LessThanEqualValue(left, right Value) (bool, error) {
 		return false, err
 	}
 
-	l, r := left.basicValue, right.basicValue
+	l, r := left.value, right.value
 
 	switch t {
-	case types.Int64:
+	case reflect.Int64:
 		return l.(int64) <= r.(int64), nil
-	case types.Float64:
+	case reflect.Float64:
 		return l.(float64) <= r.(float64), nil
-	case types.String:
+	case reflect.String:
 		return l.(string) <= r.(string), nil
 	}
 
@@ -246,14 +288,14 @@ func GreaterThanEqualValue(left, right Value) (bool, error) {
 		return false, err
 	}
 
-	l, r := left.basicValue, right.basicValue
+	l, r := left.value, right.value
 
 	switch t {
-	case types.Int64:
+	case reflect.Int64:
 		return l.(int64) >= r.(int64), nil
-	case types.Float64:
+	case reflect.Float64:
 		return l.(float64) >= r.(float64), nil
-	case types.String:
+	case reflect.String:
 		return l.(string) >= r.(string), nil
 	}
 
@@ -268,14 +310,14 @@ func GreaterThanValue(left, right Value) (bool, error) {
 		return false, err
 	}
 
-	l, r := left.basicValue, right.basicValue
+	l, r := left.value, right.value
 
 	switch t {
-	case types.Int64:
+	case reflect.Int64:
 		return l.(int64) > r.(int64), nil
-	case types.Float64:
+	case reflect.Float64:
 		return l.(float64) > r.(float64), nil
-	case types.String:
+	case reflect.String:
 		return l.(string) > r.(string), nil
 	}
 
@@ -290,14 +332,14 @@ func LessThanValue(left, right Value) (bool, error) {
 		return false, err
 	}
 
-	l, r := left.basicValue, right.basicValue
+	l, r := left.value, right.value
 
 	switch t {
-	case types.Int64:
+	case reflect.Int64:
 		return l.(int64) < r.(int64), nil
-	case types.Float64:
+	case reflect.Float64:
 		return l.(float64) < r.(float64), nil
-	case types.String:
+	case reflect.String:
 		return l.(string) < r.(string), nil
 	}
 
@@ -306,18 +348,18 @@ func LessThanValue(left, right Value) (bool, error) {
 
 // checkCompareKinds checks if the two operands are types that can be compared.
 // Returns the type if so, and error if no.
-func checkCompareKinds(left, right Value) (types.BasicKind, error) {
+func checkCompareKinds(left, right Value) (reflect.Kind, error) {
 
-	if left.basicKind != right.basicKind {
-		return types.UntypedNil, fmt.Errorf("cannot compare values of different types")
+	if left.TypeOf().Kind() != right.TypeOf().Kind() {
+		return reflect.Invalid, fmt.Errorf("cannot compare values of different types")
 	}
 
-	t := left.basicKind
-	if t != types.Int64 &&
-		t != types.Float64 &&
-		t != types.String {
+	t := left.TypeOf().Kind()
+	if t != reflect.Int64 &&
+		t != reflect.Float64 &&
+		t != reflect.String {
 		// we only know how to compare those types
-		return types.UntypedNil, fmt.Errorf("don't know how to compare those types")
+		return reflect.Invalid, fmt.Errorf("don't know how to compare those types")
 	}
 
 	return t, nil

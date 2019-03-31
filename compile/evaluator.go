@@ -3,15 +3,9 @@ package compile
 import (
 	"strconv"
 
-	"github.com/golang/go/src/go/types"
 	"github.com/pdk/gosh/token"
 	"github.com/pdk/gosh/u"
 )
-
-// Values returns a slice of Value.
-func Values(v ...Value) []Value {
-	return append([]Value{}, v...)
-}
 
 // Evaluator is a function that can be evaluated. It may return some Values
 // and/or an error.
@@ -98,11 +92,11 @@ func FuncApplication(n *Node) (Evaluator, error) {
 			return Values(), n.Error("unable to resolve function: %s", err)
 		}
 
-		if len(fr) != 1 || !fr[0].isFunction {
+		if len(fr) != 1 || !fr[0].IsFunction() {
 			return Values(), n.Error("cannot apply a non-function")
 		}
 
-		f := fr[0].function
+		f := fr[0].Function()
 
 		var values []Value
 		for _, eachEval := range paramEvals {
@@ -169,7 +163,7 @@ func FuncDefinition(n *Node) (Evaluator, error) {
 			f.captured.SetRef(v, ref)
 		}
 
-		return Values(FunctionValue(f)), nil
+		return Values(f), nil
 	}
 
 	return e, nil
@@ -189,7 +183,7 @@ func NilLiteral(n *Node) (Evaluator, error) {
 	e := func(vars *Variables) ([]Value, error) {
 		return []Value{
 			Value{
-				isNil: true,
+				value: nil,
 			},
 		}, nil
 	}
@@ -229,9 +223,7 @@ func IntegerLiteral(n *Node) (Evaluator, error) {
 	e := func(vars *Variables) ([]Value, error) {
 		return []Value{
 			Value{
-				isBasicKind: true,
-				basicKind:   types.Int64,
-				basicValue:  i,
+				value: i,
 			},
 		}, err
 	}
@@ -249,13 +241,7 @@ func FloatLiteral(n *Node) (Evaluator, error) {
 	}
 
 	e := func(vars *Variables) ([]Value, error) {
-		return []Value{
-			Value{
-				isBasicKind: true,
-				basicKind:   types.Float64,
-				basicValue:  f,
-			},
-		}, err
+		return Values(f), nil
 	}
 
 	return e, nil
@@ -267,13 +253,7 @@ func StringLiteral(n *Node) (Evaluator, error) {
 	s := n.Literal()
 
 	e := func(vars *Variables) ([]Value, error) {
-		return []Value{
-			Value{
-				isBasicKind: true,
-				basicKind:   types.String,
-				basicValue:  s,
-			},
-		}, nil
+		return Values(s), nil
 	}
 
 	return e, nil
@@ -500,17 +480,14 @@ func AdditionOperator(n *Node) (Evaluator, error) {
 			return Values(), err
 		}
 
-		if leftVal.isBasicKind && leftVal.basicKind == types.String &&
-			rightVal.isBasicKind && rightVal.basicKind == types.String {
+		if leftVal.IsString() && rightVal.IsString() {
 
-			s1 := leftVal.basicValue.(string)
-			s2 := rightVal.basicValue.(string)
+			s1 := leftVal.String()
+			s2 := rightVal.String()
 
 			return []Value{
 				Value{
-					isBasicKind: true,
-					basicKind:   types.String,
-					basicValue:  s1 + s2,
+					value: s1 + s2,
 				},
 			}, nil
 		}
@@ -535,22 +512,16 @@ func BinaryIntOperation(n *Node, left, right Evaluator, vars *Variables, op func
 		return Values(), err
 	}
 
-	if leftVal.isBasicKind && leftVal.basicKind == types.Int64 &&
-		rightVal.isBasicKind && rightVal.basicKind == types.Int64 {
+	if leftVal.IsInt64() && rightVal.IsInt64() {
 
-		i1 := leftVal.basicValue.(int64)
-		i2 := rightVal.basicValue.(int64)
+		i1 := leftVal.Int64()
+		i2 := rightVal.Int64()
 
-		return []Value{
-			Value{
-				isBasicKind: true,
-				basicKind:   types.Int64,
-				basicValue:  op(i1, i2),
-			},
-		}, nil
+		return Values(op(i1, i2)), nil
 	}
 
-	return Values(), n.Error("cannot apply %s to these types", n.Literal())
+	return Values(), n.Error("cannot apply %s to %s and %s",
+		n.Literal(), leftVal.TypeOf().Name(), rightVal.TypeOf().Name())
 }
 
 // BinaryNumericOperation evaluates left and right sides, confirms they are int64
@@ -564,37 +535,24 @@ func BinaryNumericOperation(n *Node, left, right Evaluator, vars *Variables,
 		return Values(), err
 	}
 
-	if leftVal.isBasicKind && leftVal.basicKind == types.Int64 &&
-		rightVal.isBasicKind && rightVal.basicKind == types.Int64 {
+	if leftVal.IsInt64() && rightVal.IsInt64() {
 
-		i1 := leftVal.basicValue.(int64)
-		i2 := rightVal.basicValue.(int64)
+		i1 := leftVal.Int64()
+		i2 := rightVal.Int64()
 
-		return []Value{
-			Value{
-				isBasicKind: true,
-				basicKind:   types.Int64,
-				basicValue:  intOp(i1, i2),
-			},
-		}, nil
+		return Values(intOp(i1, i2)), nil
 	}
 
-	if leftVal.isBasicKind && leftVal.basicKind == types.Float64 &&
-		rightVal.isBasicKind && rightVal.basicKind == types.Float64 {
+	if leftVal.IsFloat64() && rightVal.IsFloat64() {
 
-		f1 := leftVal.basicValue.(float64)
-		f2 := rightVal.basicValue.(float64)
+		f1 := leftVal.Float64()
+		f2 := rightVal.Float64()
 
-		return []Value{
-			Value{
-				isBasicKind: true,
-				basicKind:   types.Float64,
-				basicValue:  floatOp(f1, f2),
-			},
-		}, nil
+		return Values(floatOp(f1, f2)), nil
 	}
 
-	return Values(), n.Error("cannot apply %s to these types", n.Literal())
+	return Values(), n.Error("cannot apply %s to %s and %s",
+		n.Literal(), leftVal.TypeOf().Name(), rightVal.TypeOf().Name())
 }
 
 // SubtractionOperator returns the value of an addition operation.
@@ -700,33 +658,15 @@ func NegativeOperation(n *Node) (Evaluator, error) {
 			return Values(), err
 		}
 
-		if val.isBasicKind && val.basicKind == types.Int64 {
-
-			i := val.basicValue.(int64)
-
-			return []Value{
-				Value{
-					isBasicKind: true,
-					basicKind:   types.Int64,
-					basicValue:  -1 * i,
-				},
-			}, nil
+		if val.IsInt64() {
+			return Values(-val.Int64()), nil
 		}
 
-		if val.isBasicKind && val.basicKind == types.Float64 {
-
-			f := val.basicValue.(float64)
-
-			return []Value{
-				Value{
-					isBasicKind: true,
-					basicKind:   types.Float64,
-					basicValue:  -f,
-				},
-			}, nil
+		if val.IsFloat64() {
+			return Values(-val.Float64()), nil
 		}
 
-		return Values(), n.Error("cannot apply - (negative) to this type")
+		return Values(), n.Error("cannot apply - (negative) to %s", val.TypeOf().Name())
 	}
 
 	return e, nil

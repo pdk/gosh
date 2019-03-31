@@ -73,13 +73,14 @@ func (v *Variables) Set(name string, val Value) (Value, error) {
 		return val, nil
 	}
 
-	if cur.isNil {
+	if cur.IsNil() {
 		v.values[name] = &val
 		return val, nil
 	}
 
-	if cur.isBasicKind != val.isBasicKind || cur.basicKind != val.basicKind {
-		return NilValue(), fmt.Errorf("attempt to convert variable %s from type %d to type %d", name, cur.basicKind, val.basicKind)
+	if cur.TypeOf() != val.TypeOf() {
+		return NilValue(), fmt.Errorf("attempt to convert variable %s from type %s to type %s",
+			name, cur.TypeOf().Name(), val.TypeOf().Name())
 	}
 
 	v.values[name].Set(val)
